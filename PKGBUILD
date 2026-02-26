@@ -9,8 +9,9 @@ arch=('x86_64')
 url="https://github.com/patrickjaja/claude-cowork-service"
 license=('MIT')
 
-depends=('systemd' 'util-linux' 'claude-code')
-optdepends=('claude-desktop-bin: Unofficial Linux frontend for Claude Desktop Cowork')
+depends=('systemd' 'util-linux')
+optdepends=('claude-desktop-bin: Unofficial Linux frontend for Claude Desktop Cowork'
+            'claude-code: An agentic coding tool that lives in your terminal (you can also install via native installer)')
 makedepends=('go')
 
 install="${pkgname}.install"
