@@ -18,9 +18,12 @@ type Request struct {
 
 // Response represents an outgoing RPC response to Claude Desktop.
 // The TypeScript VM client (vZe) expects:
-//   Success: {"success": true, "result": {...}}
-//   Error:   {"success": false, "error": "message"}
+//   Success: {"success": true, "result": {...}, "id": <request-id>}
+//   Error:   {"success": false, "error": "message", "id": <request-id>}
+// The "id" field MUST echo back the request ID so the client can match
+// responses to requests. Without it, responses are treated as "orphaned".
 type Response struct {
+	ID      interface{} `json:"id,omitempty"`
 	Success bool        `json:"success"`
 	Result  interface{} `json:"result,omitempty"`
 	Error   string      `json:"error,omitempty"`
@@ -63,8 +66,10 @@ func WriteMessage(conn net.Conn, data []byte) error {
 }
 
 // WriteResponse serializes and sends a success Response.
-func WriteResponse(conn net.Conn, result interface{}) error {
+// The id parameter must be the request ID so the client can match the response.
+func WriteResponse(conn net.Conn, id interface{}, result interface{}) error {
 	resp := Response{
+		ID:      id,
 		Success: true,
 		Result:  result,
 	}
@@ -78,6 +83,7 @@ func WriteResponse(conn net.Conn, result interface{}) error {
 // WriteError sends an error response.
 func WriteError(conn net.Conn, id interface{}, code int, message string) error {
 	resp := Response{
+		ID:      id,
 		Success: false,
 		Error:   message,
 	}

@@ -99,10 +99,10 @@ func (b *Backend) IsRunning(name string) (bool, error) {
 }
 
 func (b *Backend) IsGuestConnected(name string) (bool, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	// On native, the "guest" is always connected once started
-	return b.started, nil
+	// On native Linux, the host IS the guest — always connected.
+	// Claude Desktop calls this before startVM to check if it can skip boot.
+	// Returning false causes repeated polling until timeout.
+	return true, nil
 }
 
 func (b *Backend) Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]string) (string, error) {
