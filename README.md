@@ -261,6 +261,17 @@ print(json.loads(sock.recv(length)))
 
 - [tweakcc](https://github.com/Piebald-AI/tweakcc) — A great CLI tool for customizing Claude Code (system prompts, themes, UI). Same patching-JS-to-make-it-yours energy. Thanks to the Piebald team for their work.
 
+## Legal Notice
+
+> This is an **unofficial community project** for educational and research purposes.
+> Claude Desktop's Cowork feature is proprietary software owned by **Anthropic PBC**.
+>
+> This repository contains only a reverse-engineered service daemon — not the Claude
+> Desktop application itself. A valid Claude account is required to use Cowork.
+>
+> This project is not affiliated with, endorsed by, or sponsored by Anthropic.
+> "Claude" is a trademark of Anthropic PBC.
+
 ## License
 
 MIT
