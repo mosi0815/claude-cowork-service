@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 // Handler dispatches RPC methods to the VM backend.
@@ -271,6 +272,13 @@ func (h *Handler) handleKill(conn net.Conn, req Request) {
 		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
 		return
 	}
+
+	// Delay kill by 1s to let pending result events propagate to the renderer.
+	// The Electron app sends kill immediately after receiving the result event,
+	// before the UI has time to render the response. This is especially visible
+	// in Dispatch where the result never appears in the UI.
+	time.Sleep(1 * time.Second)
+
 	if err := h.backend.Kill(p.ProcessID, p.Signal); err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return

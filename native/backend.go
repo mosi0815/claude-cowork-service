@@ -133,6 +133,23 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		}
 		os.MkdirAll(hostPath, 0755)
 		linkPath := filepath.Join(mntDir, mountName)
+
+		// Prevent self-referencing symlinks (ELOOP bug).
+		// When a parent mount (e.g. ".remote-plugins") is already symlinked,
+		// child mounts (e.g. ".remote-plugins/<id>/.mcpb-cache") resolve
+		// through the parent symlink into the real filesystem, making
+		// linkPath and hostPath point to the same location. Creating a
+		// symlink there would make it point to itself → ELOOP on every access.
+		if resolved, err := filepath.EvalSymlinks(filepath.Dir(linkPath)); err == nil {
+			resolvedLink := filepath.Join(resolved, filepath.Base(linkPath))
+			if resolvedLink == hostPath {
+				if b.debug {
+					log.Printf("[native] skip self-referencing mount: %s (resolves to %s)", mountName, hostPath)
+				}
+				continue
+			}
+		}
+
 		os.Remove(linkPath)
 		os.Symlink(hostPath, linkPath)
 		if b.debug {
