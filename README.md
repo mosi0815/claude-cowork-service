@@ -27,12 +27,11 @@ Updates are automatic via `sudo apt update && sudo apt upgrade`.
 ### Fedora / RHEL (.rpm)
 
 ```bash
-# Download from GitHub Releases
-wget https://github.com/patrickjaja/claude-cowork-service/releases/latest/download/claude-cowork-service-1.0.0-1.x86_64.rpm
-sudo dnf install ./claude-cowork-service-*-1.x86_64.rpm
+# Download and install latest release
+sudo dnf install https://github.com/patrickjaja/claude-cowork-service/releases/latest/download/claude-cowork-service-latest.x86_64.rpm
 ```
 
-> **Note:** No automatic updates. Download the latest `.rpm` from [GitHub Releases](https://github.com/patrickjaja/claude-cowork-service/releases) to update.
+> **Note:** No automatic updates. Re-run the command above to update to the latest version.
 
 ### Arch Linux (AUR)
 

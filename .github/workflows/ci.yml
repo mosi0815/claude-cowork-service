@@ -178,7 +178,11 @@ jobs:
           sudo chown -R $(id -u):$(id -g) rpm-out
           RPM_FILE=$(ls rpm-out/claude-cowork-service-*.rpm)
           sha256sum "$RPM_FILE" > "${RPM_FILE}.sha256"
+          # Create a stable-named copy for predictable download URLs
+          cp "$RPM_FILE" "rpm-out/claude-cowork-service-latest.x86_64.rpm"
+          sha256sum "rpm-out/claude-cowork-service-latest.x86_64.rpm" > "rpm-out/claude-cowork-service-latest.x86_64.rpm.sha256"
           echo "rpm_file=$RPM_FILE" >> $GITHUB_OUTPUT
+          echo "rpm_stable=rpm-out/claude-cowork-service-latest.x86_64.rpm" >> $GITHUB_OUTPUT
           echo "rpm_sha256=$(cut -d' ' -f1 "${RPM_FILE}.sha256")" >> $GITHUB_OUTPUT
 
       - name: Test RPM package
@@ -220,6 +224,8 @@ jobs:
             ${{ steps.deb.outputs.deb_file }}.sha256
             ${{ steps.rpm.outputs.rpm_file }}
             ${{ steps.rpm.outputs.rpm_file }}.sha256
+            ${{ steps.rpm.outputs.rpm_stable }}
+            ${{ steps.rpm.outputs.rpm_stable }}.sha256
           body: |
             ${{ steps.changelog.outputs.content }}
 
@@ -233,7 +239,7 @@ jobs:
 
             **Fedora / RHEL (.rpm):**
             ```
-            sudo dnf install ./claude-cowork-service-${{ needs.prepare.outputs.version }}-1.x86_64.rpm
+            sudo dnf install https://github.com/patrickjaja/claude-cowork-service/releases/latest/download/claude-cowork-service-latest.x86_64.rpm
             ```
 
             **NixOS:**
