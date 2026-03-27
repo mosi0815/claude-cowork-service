@@ -22,6 +22,17 @@
         }
       );
 
+      checks = forAllSystems (system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        {
+          module-eval = pkgs.callPackage ./packaging/nix/module-test.nix {
+            inherit nixpkgs self;
+          };
+        }
+      );
+
       nixosModules.default = import ./packaging/nix/module.nix self;
     };
 }

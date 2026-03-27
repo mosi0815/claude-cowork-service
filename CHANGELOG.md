@@ -2,6 +2,11 @@
 
 All notable changes to claude-cowork-service will be documented in this file.
 
+## Unreleased
+
+### Added
+- **NixOS module evaluation tests in CI** — Verify module.nix produces correct systemd service config (ExecStart, Restart, wantedBy, extraPath wiring) via `nix flake check`
+
 ## 1.0.16 — 2026-03-23
 
 ### Changed
