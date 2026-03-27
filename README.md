@@ -65,6 +65,18 @@ Updates arrive through your AUR helper (e.g. `yay -Syu`).
 }
 ```
 
+> **Note:** The cowork service invokes `claude` internally, which must be in the
+> systemd service PATH. Systemd user services don't inherit your shell's PATH,
+> so you need to declare it explicitly via `extraPath`:
+>
+> ```nix
+> # Claude Code installed via npm global:
+> services.claude-cowork.extraPath = [ pkgs.nodejs "/home/user/.npm-global" ];
+>
+> # Claude Code available as a Nix package:
+> services.claude-cowork.extraPath = [ pkgs.claude-code ];
+> ```
+
 Or run directly with Nix:
 ```bash
 nix run github:patrickjaja/claude-cowork-service
