@@ -422,6 +422,28 @@ jobs:
             git push origin gh-pages
           }
 
+      - name: Install Nix (for hash computation)
+        uses: cachix/install-nix-action@v27
+
+      - name: Update Nix package hash
+        run: |
+          VER="${RELEASE_VERSION#v}"
+          URL="https://github.com/${{ github.repository }}/archive/${RELEASE_VERSION}.tar.gz"
+          NAR_HASH=$(nix-prefetch-url --unpack --type sha256 "$URL" 2>/dev/null)
+          NIX_HASH=$(nix hash to-sri --type sha256 "$NAR_HASH")
+
+          sed -i -E "s|version = \"[^\"]+\"|version = \"$VER\"|" packaging/nix/package.nix
+          sed -i -E "s|hash = \"sha256-[^\"]+\"|hash = \"$NIX_HASH\"|" packaging/nix/package.nix
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add packaging/nix/package.nix
+          git diff --staged --quiet || {
+            git commit -m "Update Nix package hash for v${VER}"
+            git pull --rebase origin main
+            git push origin main
+          }
+
   aur:
     needs: [prepare, release]
     if: needs.prepare.outputs.do_release == 'true'
@@ -470,14 +492,14 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.AUR_SSH_KEY }}" > ~/.ssh/aur
           chmod 600 ~/.ssh/aur
-          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -t ed25519 aur.archlinux.org >> ~/.ssh/known_hosts 2>/dev/null
 
-          cat >> ~/.ssh/config << EOF
-          Host aur.archlinux.org
-            User aur
-            IdentityFile ~/.ssh/aur
-            StrictHostKeyChecking no
-          EOF
+          printf '%s\n' \
+            "Host aur.archlinux.org" \
+            "  User aur" \
+            "  IdentityFile ~/.ssh/aur" \
+            "  StrictHostKeyChecking no" \
+            >> ~/.ssh/config
 
           # Verify key is valid
           ssh-keygen -y -f ~/.ssh/aur > /dev/null 2>&1 || { echo "::error::AUR_SSH_KEY secret is not a valid private key"; exit 1; }
