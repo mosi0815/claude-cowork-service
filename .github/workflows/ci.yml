@@ -237,11 +237,11 @@ jobs:
       - name: Test RPM package (x86_64)
         run: |
           docker run --rm \
-            -v "$(pwd)/rpm-out:/dist:ro" \
+            -v "$(pwd)/${{ steps.rpm.outputs.rpm_file }}:/dist/test.rpm:ro" \
             fedora:40 \
             bash -c "
               set -e
-              dnf install -y /dist/claude-cowork-service-*x86_64.rpm
+              dnf install -y /dist/test.rpm
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
               echo 'RPM x86_64 test passed'
@@ -250,11 +250,11 @@ jobs:
       - name: Test RPM package (aarch64)
         run: |
           docker run --rm --platform linux/arm64 \
-            -v "$(pwd)/rpm-out-arm64:/dist:ro" \
+            -v "$(pwd)/${{ steps.rpm_arm64.outputs.rpm_file }}:/dist/test.rpm:ro" \
             arm64v8/fedora:40 \
             bash -c "
               set -e
-              dnf install -y /dist/claude-cowork-service-*aarch64.rpm
+              dnf install -y /dist/test.rpm
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
               echo 'RPM aarch64 test passed'
