@@ -30,7 +30,7 @@ package() {
     install -Dm755 cowork-svc-linux \
         "${pkgdir}/usr/bin/cowork-svc-linux"
 
-    install -Dm644 dist/claude-cowork.service \
+    install -Dm644 claude-cowork.service \
         "${pkgdir}/usr/lib/systemd/user/claude-cowork.service"
 
     install -Dm644 LICENSE \

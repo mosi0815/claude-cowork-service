@@ -38,7 +38,7 @@ install -m755 "$BINARY" "$BUILD_DIR/usr/bin/cowork-svc-linux"
 # Install systemd service
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-install -m644 "$REPO_ROOT/dist/claude-cowork.service" "$BUILD_DIR/usr/lib/systemd/user/claude-cowork.service"
+install -m644 "$REPO_ROOT/claude-cowork.service" "$BUILD_DIR/usr/lib/systemd/user/claude-cowork.service"
 
 # Create control file
 cat > "$BUILD_DIR/DEBIAN/control" <<EOF

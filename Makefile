@@ -24,7 +24,7 @@ clean:
 
 install: build
 	install -Dm755 $(BINARY) $(DESTDIR)$(PREFIX)/bin/$(BINARY)
-	install -Dm644 dist/claude-cowork.service $(DESTDIR)$(PREFIX)/lib/systemd/user/claude-cowork.service
+	install -Dm644 claude-cowork.service $(DESTDIR)$(PREFIX)/lib/systemd/user/claude-cowork.service
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(BINARY)

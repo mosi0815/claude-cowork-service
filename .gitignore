@@ -12,3 +12,4 @@ cowork-svc.exe
 bin/
 vm-bundle/
 .vm-analysis/
+dist/
