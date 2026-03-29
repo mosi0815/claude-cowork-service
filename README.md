@@ -1,11 +1,11 @@
 # claude-cowork-service
 
-[![Claude Desktop](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/version-check.json)](https://github.com/patrickjaja/claude-cowork-service/actions/workflows/version-check.yml)
+[![Claude Desktop](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/version-check.json)](https://claude.ai/download)
 [![AUR version](https://img.shields.io/aur/version/claude-cowork-service)](https://aur.archlinux.org/packages/claude-cowork-service)
 [![APT repo](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/apt-repo.json)](https://patrickjaja.github.io/claude-cowork-service/)
 [![RPM repo](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/rpm-repo.json)](https://patrickjaja.github.io/claude-cowork-service/)
 [![Nix flake](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/nix.json)](https://github.com/patrickjaja/claude-cowork-service/blob/main/flake.nix)
-[![CI](https://github.com/patrickjaja/claude-cowork-service/actions/workflows/ci.yml/badge.svg)](https://github.com/patrickjaja/claude-cowork-service/actions/workflows/ci.yml)
+[![Build & Release](https://github.com/patrickjaja/claude-cowork-service/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/patrickjaja/claude-cowork-service/actions/workflows/build-and-release.yml)
 
 Native Linux backend for Claude Desktop's **Cowork** feature. Reverse-engineered from Windows [`cowork-svc.exe`](https://github.com/anthropics/cowork-win32-service) bundled with Claude Desktop v1.1.4173.
 

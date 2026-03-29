@@ -1,4 +1,4 @@
-name: Check for New Claude Desktop Version
+name: Version Check
 
 on:
   schedule:
