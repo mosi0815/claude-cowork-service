@@ -1,6 +1,6 @@
 # NixOS module evaluation test
 # Verifies that the module evaluates correctly and produces expected systemd config.
-{ pkgs, nixpkgs, self }:
+{ pkgs, nixpkgs, self, packageOverride ? null }:
 
 let
   # Minimal config to satisfy NixOS module evaluation
@@ -11,7 +11,9 @@ let
       fileSystems."/" = { device = "none"; fsType = "tmpfs"; };
       system.stateVersion = "24.11";
     }
-  ];
+  ] ++ pkgs.lib.optionals (packageOverride != null) [{
+    services.claude-cowork.package = packageOverride;
+  }];
 
   # Evaluate with default settings (just enable the service)
   defaultEval = (nixpkgs.lib.nixosSystem {

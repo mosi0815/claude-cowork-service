@@ -104,8 +104,20 @@ jobs:
           '
       - name: Test NixOS module evaluation
         run: |
+          # Override package src so the module test builds from local source,
+          # not the (potentially stale) fetchFromGitHub tag.
           nix build --no-link --print-build-logs --impure --expr '
-            (builtins.getFlake (toString ./.)).checks.x86_64-linux.module-eval
+            let
+              flake = builtins.getFlake (toString ./.);
+              pkgs = flake.inputs.nixpkgs.legacyPackages.x86_64-linux;
+              localPkg = flake.packages.x86_64-linux.claude-cowork-service.overrideAttrs {
+                src = flake.outPath;
+              };
+            in pkgs.callPackage ./packaging/nix/module-test.nix {
+              nixpkgs = flake.inputs.nixpkgs;
+              self = flake;
+              packageOverride = localPkg;
+            }
           '
 
   release:
