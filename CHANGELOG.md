@@ -10,6 +10,7 @@ All notable changes to claude-cowork-service will be documented in this file.
 - **Version update playbook** — Added `update-prompt.md` with reusable prompts for the full update workflow (extract, diff protocol changes, audit Go code compatibility) and `UPDATE-PROMPT-CC-INPUT-MANUAL.md` as a quick-reference entry point
 - **Project guidelines** — Added `CLAUDE.md` with build/run instructions, key file purposes, deep analysis workflow, debugging commands, and architecture notes
 - **README badges and docs section** — Added 6 status badges (Claude Desktop version, AUR, APT repo, RPM repo, Nix flake, CI) and an "Upstream Reference Docs" section linking to the three new protocol/binary/bundle documents
+- **`.upstream-version` tracking file** — Committed file tracking the upstream Claude Desktop version for CI; fixes version-check workflow which previously read `bin/.version` (gitignored, never available in CI)
 - **`.vm-analysis/` in `.gitignore`** — Scratch directory used during deep analysis of upstream binaries
 
 ## 1.0.22 — 2026-03-28

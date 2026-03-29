@@ -64,6 +64,7 @@ make test
 | `packaging/debian/` | `.deb` build scripts |
 | `packaging/rpm/` | `.rpm` build scripts + repo infrastructure |
 | `packaging/apt/` | APT repository infrastructure |
+| `.upstream-version` | Committed upstream Claude Desktop version (used by CI version-check workflow) |
 | `dist/` | Compiled binary + systemd service file |
 
 ## Upstream Reference Materials
@@ -206,7 +207,7 @@ The daemon mimics the Windows `cowork-svc.exe` exactly at the protocol level so 
 ## Versioning
 
 - **Project version:** semver (`v1.0.x`), independent of upstream Claude Desktop version
-- **Upstream tracking:** `bin/.version` and `vm-bundle/.version` track the Claude Desktop version
+- **Upstream tracking:** `.upstream-version` (committed) tracks the Claude Desktop version for CI; `bin/.version` and `vm-bundle/.version` (gitignored) are local copies created by extract scripts
 - **CI version:** from git tags via `-X main.version=$(VERSION)` ldflags
 - **Release:** `workflow_dispatch` with patch/minor/major bump
 

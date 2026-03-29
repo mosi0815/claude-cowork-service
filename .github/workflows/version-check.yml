@@ -31,10 +31,10 @@ jobs:
         id: tracked
         if: steps.upstream.outputs.version
         run: |
-          # Read the version from bin/.version (tracks which Claude Desktop version
-          # our reference materials were extracted from)
-          if [ -f bin/.version ]; then
-            CURRENT=$(cat bin/.version | tr -d '[:space:]')
+          # Read from .upstream-version (committed to repo, tracks which Claude
+          # Desktop version our reference materials were extracted from)
+          if [ -f .upstream-version ]; then
+            CURRENT=$(cat .upstream-version | tr -d '[:space:]')
           else
             CURRENT=""
           fi
@@ -92,7 +92,7 @@ jobs:
           | | Version |
           |---|---|
           | **Upstream** | \`${UPSTREAM}\` |
-          | **Current (bin/.version)** | \`${TRACKED}\` |
+          | **Current (.upstream-version)** | \`${TRACKED}\` |
 
           ### What needs updating
 
