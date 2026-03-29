@@ -71,11 +71,13 @@ Updates arrive through your AUR helper (e.g. `yay -Syu`).
 >
 > ```nix
 > # Claude Code installed via npm global:
-> services.claude-cowork.extraPath = [ pkgs.nodejs "/home/user/.npm-global" ];
+> services.claude-cowork.extraPath = [ pkgs.nodejs "/path/to/directory/containing/claude" ];
 >
 > # Claude Code available as a Nix package:
 > services.claude-cowork.extraPath = [ pkgs.claude-code ];
 > ```
+>
+> **Dispatch** requires Claude Code >= 2.1.86 (fixes `CLAUDE_CODE_BRIEF` env parsing). If nixpkgs ships an older version, use `extraPath` to point to a newer install.
 
 Or run directly with Nix:
 ```bash
