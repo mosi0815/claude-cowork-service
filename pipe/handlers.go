@@ -73,6 +73,12 @@ func (h *Handler) Handle(conn net.Conn, payload []byte) {
 		h.handleSubscribeEvents(conn, req)
 	case "getDownloadStatus":
 		h.handleGetDownloadStatus(conn, req)
+	case "getSessionsDiskInfo":
+		h.handleGetSessionsDiskInfo(conn, req)
+	case "deleteSessionDirs":
+		h.handleDeleteSessionDirs(conn, req)
+	case "createDiskImage":
+		h.handleCreateDiskImage(conn, req)
 	default:
 		if h.debug {
 			log.Printf("RPC: unknown method %q — returning success (passthrough)", req.Method)
@@ -110,13 +116,31 @@ type killParams struct {
 }
 
 type spawnParams struct {
-	Name             string                       `json:"name"`
-	ID               string                       `json:"id"`
-	Cmd              string                       `json:"command"`
-	Args             []string                     `json:"args"`
-	Env              map[string]string             `json:"env"`
-	Cwd              string                       `json:"cwd"`
-	AdditionalMounts map[string]additionalMount    `json:"additionalMounts"`
+	Name               string                       `json:"name"`
+	ID                 string                       `json:"id"`
+	Cmd                string                       `json:"command"`
+	Args               []string                     `json:"args"`
+	Env                map[string]string             `json:"env"`
+	Cwd                string                       `json:"cwd"`
+	AdditionalMounts   map[string]additionalMount    `json:"additionalMounts"`
+	IsResume           bool                         `json:"isResume"`
+	AllowedDomains     []string                     `json:"allowedDomains"`
+	OneShot            bool                         `json:"oneShot"`
+	MountSkeletonHome  bool                         `json:"mountSkeletonHome"`
+	MountConda         string                       `json:"mountConda"`
+}
+
+type getSessionsDiskInfoParams struct {
+	LowWaterBytes int64 `json:"lowWaterBytes"`
+}
+
+type deleteSessionDirsParams struct {
+	Names []string `json:"names"`
+}
+
+type createDiskImageParams struct {
+	DiskName string `json:"diskName"`
+	SizeGiB  int    `json:"sizeGiB"`
 }
 
 type additionalMount struct {
@@ -453,4 +477,40 @@ func (h *Handler) handleSubscribeEvents(conn net.Conn, req Request) {
 func (h *Handler) handleGetDownloadStatus(conn net.Conn, req Request) {
 	status := h.backend.GetDownloadStatus()
 	WriteResponse(conn, req.ID, map[string]string{"status": status})
+}
+
+func (h *Handler) handleGetSessionsDiskInfo(conn net.Conn, req Request) {
+	// No-op on native Linux — no virtual disks to manage.
+	if h.debug {
+		log.Printf("RPC: getSessionsDiskInfo (no-op, native mode)")
+	}
+	WriteResponse(conn, req.ID, map[string]interface{}{
+		"totalBytes": 0,
+		"freeBytes":  0,
+		"sessions":   []interface{}{},
+	})
+}
+
+func (h *Handler) handleDeleteSessionDirs(conn net.Conn, req Request) {
+	// No-op on native Linux — session dirs are managed directly.
+	if h.debug {
+		log.Printf("RPC: deleteSessionDirs (no-op, native mode)")
+	}
+	WriteResponse(conn, req.ID, map[string]interface{}{
+		"deleted": []string{},
+		"errors":  map[string]string{},
+	})
+}
+
+func (h *Handler) handleCreateDiskImage(conn net.Conn, req Request) {
+	// No-op on native Linux — no virtual disk images needed (e.g. conda VHDX).
+	var p createDiskImageParams
+	if err := json.Unmarshal(req.Params, &p); err != nil {
+		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
+		return
+	}
+	if h.debug {
+		log.Printf("RPC: createDiskImage diskName=%q sizeGiB=%d (no-op, native mode)", p.DiskName, p.SizeGiB)
+	}
+	WriteResponse(conn, req.ID, nil)
 }

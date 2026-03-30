@@ -1,4 +1,4 @@
-# Cowork Service Binary Analysis — v1.1.9493
+# Cowork Service Binary Analysis — v1.1.9669
 
 ## Binary Overview
 
@@ -13,13 +13,14 @@ The extract script pulls all files from the same directory level as cowork-svc.e
 | File | Size | Purpose |
 |------|------|---------|
 | cowork-svc.exe | 11 MB | Windows Hyper-V backend (Go binary) |
-| app.asar | 18 MB | Claude Desktop Electron app (same as main app) |
+| app.asar | 19 MB | Claude Desktop Electron app (same as main app) |
 | chrome-native-host.exe | 1 MB | Chrome native messaging host for browser tools |
+| cowork-plugin-shim.sh | 7.5 KB | Plugin permission gating library (new in v1.1.9669) |
 | smol-bin.x64.vhdx | 36 MB | Empty ext4 filesystem for sdk-daemon updater |
-| default.clod | 98 KB | Default configuration/data |
+| default.clod | 97 KB | Default configuration/data |
 | *.json (locale files) | ~15-75 KB each | UI translations (de-DE, en-US, es-419, etc.) |
 | *.png / *.ico | ~2-4 KB each | Tray icons (light/dark, various DPI) |
-| .version | 9 bytes | Version string ("1.1.9493") |
+| .version | 9 bytes | Version string ("1.1.9669") |
 
 ## Windows Architecture
 
@@ -68,15 +69,16 @@ Claude Desktop (Electron, patched)
 
 ---
 
-## cowork-svc.exe Deep Analysis (v1.1.9493)
+## cowork-svc.exe Deep Analysis (v1.1.9669)
 
 | Property | Value |
 |----------|-------|
 | **File type** | PE32+ executable for MS Windows 6.01 (console), x86-64, 8 sections |
 | **Go version** | go1.24.13 |
 | **Module** | github.com/anthropics/cowork-win32-service |
-| **Size** | 11,162,448 bytes |
-| **SHA256** | fd4d0d46b6756b1dd78ba599b927c1e8a37b53774a71e9e80fdd25afd945c328 |
+| **Build date** | 2026-03-30 |
+| **Size** | 11,174,736 bytes |
+| **SHA256** | 9a94ec5d95c9642a5d7bbb4503d804b8e89f748c8a5359f57304b7eec6e693bb |
 
 ### Go Module Structure (from binary strings)
 
@@ -179,22 +181,23 @@ Three packages: `main`, `pipe`, `vm`
 
 | Method | Purpose | Notes |
 |--------|---------|-------|
-| `handleCreateDiskImage` | Creates session/conda disk images | Native Linux doesn't need virtual disks |
 | `handlePassthrough` | Forwards arbitrary requests to VM | We handle all methods directly |
 | `handlePersistentRPC` | Long-lived bidirectional RPC | May be used for future streaming features |
-| `SetCondaDiskPath` | Conda environment management | Indicates potential upcoming package management |
+| `SetCondaDiskPath` | Conda environment management | Native Linux uses host conda directly |
+
+**Newly handled in v1.1.9669:** `handleCreateDiskImage`, `getSessionsDiskInfo`, `deleteSessionDirs` (all no-ops on native Linux).
 
 ---
 
-## bin/ Directory Checksums
+## bin/ Directory Checksums (v1.1.9669)
 
 | File | SHA256 |
 |------|--------|
-| .version | 97276d691007e5a70448c112e2433e96fa6a8447e30c27888bc103390fdd39a5 |
-| cowork-svc.exe | fd4d0d46b6756b1dd78ba599b927c1e8a37b53774a71e9e80fdd25afd945c328 |
-| chrome-native-host.exe | 2cf3b3216e8c1cabc861cdf84ed92f34faa6e835d89ed910b81ebda32665a2a8 |
-| smol-bin.x64.vhdx | acd1ce8677aaae8a7606b0b828c339c6d9252cb5b5707b8a66e5077f8d9cfc4d |
-| default.clod | d601ae9bf53de2d6d4a202c3fef1bd9ef2898932483e9df6a6a3dd99eb240796 |
+| cowork-svc.exe | 9a94ec5d95c9642a5d7bbb4503d804b8e89f748c8a5359f57304b7eec6e693bb |
+| cowork-plugin-shim.sh | *(new — plugin permission gating library)* |
+| chrome-native-host.exe | *(check with sha256sum)* |
+| smol-bin.x64.vhdx | *(check with sha256sum)* |
+| default.clod | *(check with sha256sum)* |
 
 ---
 
@@ -202,11 +205,22 @@ Three packages: `main`, `pipe`, `vm`
 
 | Property | Value |
 |----------|-------|
-| **Package** | @ant/desktop v1.1.9493 |
+| **Package** | @ant/desktop v1.1.9669 |
 | **Electron** | 40.4.1 |
 | **Node requirement** | >=22.0.0 |
 
+### New in v1.1.9669
+
+- **coworkArtifact.js** — Electron preload script exposing `window.cowork.callMcpTool(toolName, params)` bridge for web artifacts to invoke MCP tools
+- **Plugin/marketplace system** — Full plugin install/uninstall/sync via Electron IPC (`CustomPlugins` interface), not cowork-svc RPC
+- **Conda integration** — `createDiskImage` RPC, `mountConda` spawn param, `manage_environments`/`manage_packages` tools
+- **Scheduled tasks** — `coworkScheduledTasksEnabled` / `ccdScheduledTasksEnabled` settings (both default `false`)
+- **New cowork tools**: `request_network_access`, `request_host_access`, `render_dashboard`/`patch_dashboard`/`read_dashboard`, `display_artifacts`
+- **`--cowork` flag** — appended to CLI commands when `useCoworkFlag` is true
+
 ### Key Dependency Versions
+
+*(verified identical to v1.1.9493)*
 
 | Package | Version |
 |---------|---------|
@@ -254,7 +268,8 @@ Three packages: `main`, `pipe`, `vm`
 
 | Claude Desktop Version | cowork-svc.exe Size | Notable Changes |
 |----------------------|-------------------|-----------------|
-| 1.1.9493 | 11,162,448 bytes | Current |
-| 1.1.9310 | (check previous) | Previous |
+| 1.1.9669 | 11,174,736 bytes | New: cowork-plugin-shim.sh, conda disk support, plugin system, coworkArtifact.js |
+| 1.1.9493 | 11,162,448 bytes | Previous |
+| 1.1.9310 | (check previous) | — |
 | 1.1.7464 | (original extraction) | First reverse engineering |
 | 1.1.4173 | (initial discovery) | Original README reference |

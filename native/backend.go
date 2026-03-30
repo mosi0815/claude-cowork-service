@@ -258,7 +258,7 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 	// update_artifact) are handled by the VM runtime rather than the CLI. On native
 	// Linux there is no VM — the CLI must handle all tools directly.
 	//
-	// Default --disallowedTools from Desktop (as of v1.1.9310):
+	// Default --disallowedTools from Desktop (as of v1.1.9669):
 	//   AskUserQuestion, mcp__cowork__allow_cowork_file_delete,
 	//   mcp__cowork__present_files, mcp__cowork__launch_code_session,
 	//   mcp__cowork__create_artifact, mcp__cowork__update_artifact

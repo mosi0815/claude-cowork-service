@@ -4,6 +4,18 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+### Added
+- **Upstream update to Claude Desktop v1.1.9669** (from v1.1.9493)
+- **3 new RPC handlers**: `getSessionsDiskInfo`, `deleteSessionDirs`, `createDiskImage` — all no-ops on native Linux (no virtual disks needed). Desktop's `VMDiskJanitor` and conda integration call these methods
+- **5 new spawn parameters**: `isResume`, `allowedDomains`, `oneShot`, `mountSkeletonHome`, `mountConda` — parsed from JSON but ignored on native (no VM/network isolation)
+- **Protocol now handles 21 RPC methods** (up from 18)
+
+### Changed
+- **Updated reference docs** — `COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md` updated to v1.1.9669 with new checksums, methods, and version history
+- **VM bundle SHA**: `5680b11bcdab215cccf07e0c0bd1bd9213b0c25d` (all file checksums changed)
+- **New upstream file**: `cowork-plugin-shim.sh` — plugin permission gating library (filesystem-based request/response protocol)
+- **New asar file**: `coworkArtifact.js` — Electron preload exposing `window.cowork.callMcpTool()` for web artifacts to invoke MCP tools
+
 ## 1.0.25 — 2026-03-29
 
 ## 1.0.24 — 2026-03-29

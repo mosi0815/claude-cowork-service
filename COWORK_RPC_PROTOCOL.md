@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference — v1.1.9493
+# Cowork RPC Protocol Reference — v1.1.9669
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -8,7 +8,7 @@
 ## Table of Contents
 
 - [Wire Protocol](#wire-protocol)
-- [RPC Methods (18 total)](#rpc-methods-18-total)
+- [RPC Methods (21 total)](#rpc-methods-21-total)
 - [Event Types (8 total)](#event-types-8-total)
 - [Protocol Discoveries](#protocol-discoveries)
 - [Linux-Specific Adaptations](#linux-specific-adaptations)
@@ -67,7 +67,7 @@ Unknown method names receive a success response with `null` result (passthrough 
 
 ---
 
-## RPC Methods (18 total)
+## RPC Methods (21 total)
 
 ### 1. `configure`
 
@@ -219,9 +219,21 @@ Spawns a command as a child process. This is the most complex method in the prot
       "path": string,
       "mode": string
     }
-  }
+  },
+  "isResume": boolean,
+  "allowedDomains": [string],
+  "oneShot": boolean,
+  "mountSkeletonHome": boolean,
+  "mountConda": string
 }
 ```
+
+**New fields (v1.1.9669):**
+- `isResume` (boolean, default `false`): Whether this is a resumed session.
+- `allowedDomains` (array of strings, optional): Network egress allowlist for the spawned process. Ignored on native Linux (no network isolation).
+- `oneShot` (boolean, default `false`): For one-shot command execution.
+- `mountSkeletonHome` (boolean, default `false`): Whether to mount a skeleton home directory.
+- `mountConda` (string, optional): Conda environment mount mode — `"ro"`, `"rw"`, or `"rwd"`. Ignored on native Linux.
 
 **Response:**
 ```json
@@ -492,6 +504,77 @@ Returns the download/readiness status of the VM bundle.
 ```
 
 **Native Linux behavior:** Always returns `"ready"` since there is no VM bundle to download.
+
+---
+
+### 19. `getSessionsDiskInfo`
+
+Returns disk usage information for session directories. Used by Desktop's `VMDiskJanitor` to manage disk space.
+
+**Params:**
+```json
+{
+  "lowWaterBytes": int
+}
+```
+
+**Response:**
+```json
+{
+  "totalBytes": int,
+  "freeBytes": int,
+  "sessions": []
+}
+```
+
+**Native Linux behavior:** Returns zeros and an empty sessions list. Native Linux uses the host filesystem directly — no virtual disks to manage.
+
+**Added in:** v1.1.9669
+
+---
+
+### 20. `deleteSessionDirs`
+
+Deletes session directories to free disk space. Called by Desktop's janitor when disk space is low.
+
+**Params:**
+```json
+{
+  "names": [string]
+}
+```
+
+**Response:**
+```json
+{
+  "deleted": [string],
+  "errors": {}
+}
+```
+
+**Native Linux behavior:** No-op. Returns empty deleted list and empty errors. Session dirs on native Linux are managed directly on the host filesystem.
+
+**Added in:** v1.1.9669
+
+---
+
+### 21. `createDiskImage`
+
+Creates a virtual disk image (e.g., for conda environments). Used to create a 50GB `condadata.vhdx/img` for conda package management inside the VM.
+
+**Params:**
+```json
+{
+  "diskName": string,
+  "sizeGiB": int
+}
+```
+
+**Response:** `null`
+
+**Native Linux behavior:** No-op. Native Linux doesn't need virtual disk images — conda runs directly on the host filesystem.
+
+**Added in:** v1.1.9669
 
 ---
 
@@ -768,14 +851,15 @@ These methods exist in cowork-svc.exe (from binary string analysis) but are not 
 
 | Method | Purpose | Risk |
 |--------|---------|------|
-| `handleCreateDiskImage` | Creates session/conda disk images | Low — native Linux doesn't need virtual disks |
 | `handlePassthrough` | Forwards arbitrary requests to VM | Low — we handle all methods directly |
 | `handlePersistentRPC` | Long-lived bidirectional RPC | Medium — may be used for future streaming features |
-| `SetCondaDiskPath` | Conda environment management | Low — but indicates potential upcoming package management |
+| `SetCondaDiskPath` | Conda environment management | Low — native Linux uses host conda directly |
 | `InitSignatureVerification` / `verifyClientSignature` | Windows code signing verification | N/A — Linux doesn't use Windows code signing |
 | `GetClientInfo` / `GetClientInfoFromConn` | Caller authentication | N/A — we trust all connections on the Unix socket |
 
 **Note:** New methods in the binary don't necessarily mean new RPC protocol methods — some are internal Go functions. Monitor `handleX` patterns specifically.
+
+**Newly implemented in v1.1.9669:** `createDiskImage`, `getSessionsDiskInfo`, `deleteSessionDirs` (all no-ops on native Linux).
 
 ---
 

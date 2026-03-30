@@ -12,7 +12,7 @@ This is a native Linux backend daemon for Claude Desktop's Cowork feature. It re
 
 **Session dirs:** `~/.local/share/claude-cowork/sessions/<name>/`
 
-**Protocol:** 18 RPC methods over length-prefixed JSON (4-byte big-endian header, max 10 MB per message).
+**Protocol:** 21 RPC methods over length-prefixed JSON (4-byte big-endian header, max 10 MB per message).
 
 **Key constraint:** The upstream binary (`cowork-svc.exe`) is managed remotely by Anthropic and changes without notice. Every RPC method, parameter name, and protocol behavior can change between releases. This makes the project inherently fragile --- protocol documentation and handler code must be re-validated on each upstream update.
 
@@ -72,7 +72,7 @@ make test
 - `bin/` --- Extracted from Claude Desktop Windows installer (`cowork-svc.exe` lives alongside `app.asar`, locale JSONs, icons)
 - `vm-bundle/` --- VM images + config downloaded from Anthropic CDN
 - Both directories have `.version` files tracking the Claude Desktop version they were extracted from
-- Currently at version **1.1.9493**
+- Currently at version **1.1.9669**
 
 ## Version-Sensitive Artifacts
 
@@ -86,8 +86,11 @@ These files embed assumptions about upstream internals and **must be re-validate
 | `native/backend.go` | Spawn parameters, mount handling, path remapping | Test all session types (chat, code, dispatch) |
 | `native/process.go` | Event types, output formats, binary resolution | Check new CLI flags and output |
 | `pipe/handlers.go` | RPC method set, parameter structs | Add handlers for any new methods |
+| `CHANGELOG.md` | Documents all changes per release | Update the `Unreleased` section with upstream changes |
 
 **Rule of thumb:** If a handler references a specific RPC method or parameter name, it may be wrong after the next upstream release. Always verify against the actual protocol traffic.
+
+**CHANGELOG.md:** Every upstream update or code change MUST be documented in `CHANGELOG.md` under the `## Unreleased` section. Use subsections `### Added`, `### Changed`, `### Fixed`, `### Removed` as appropriate. This file is the user-facing record of what changed and why.
 
 ## Deep Analysis Workflow
 

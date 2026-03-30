@@ -1,4 +1,4 @@
-# Cowork VM Bundle Reference — v1.1.9493
+# Cowork VM Bundle Reference — v1.1.9669
 
 > Re-validate on every upstream Claude Desktop version update.
 
@@ -9,38 +9,38 @@
 - VM images are downloaded from Anthropic CDN on first use
 - URL pattern: `https://downloads.claude.ai/vms/linux/<arch>/<sha>/<filename>.zst`
 
-## Current Config (v1.1.9493)
+## Current Config (v1.1.9669)
 
-- **SHA:** `fb30784dadb34104626c8cf6d8f90dd47cd393cc`
+- **SHA:** `5680b11bcdab215cccf07e0c0bd1bd9213b0c25d`
 - **Platforms:** darwin (arm64, x64), win32 (arm64, x64)
 
 **darwin/arm64:**
 
 | File | Checksum (SHA256) |
 |------|------------------|
-| rootfs.img | e77049d2784801ad3df8baf0e875e34430731c798e1ca5809af3e549086e2b97 |
+| rootfs.img | cb93e2748afd6022bcae48db01776d4ad4308ca8c0ea54bd2af48b1aeed8a242 |
 
 **darwin/x64:**
 
 | File | Checksum |
 |------|----------|
-| rootfs.img | 231c5ac45e5de77c621edeb0cbb05361068203a5ee71488e88ee19e10970ed2d |
+| rootfs.img | e2087478e3972f200da883b1df824efb966a08b927f3fc021a32844b594d7033 |
 
 **win32/arm64:**
 
 | File | Checksum | Progress |
 |------|----------|----------|
-| rootfs.vhdx | 1551d438829b6ae234a9145ab1768394edb1c20ee5255ce342ac3f99c4abf351 | 0-80% |
-| vmlinuz | 2af5854ca028473b0e5405b56a6eb034000bce6a44902f80e4f76c47e00031f7 | 80-90% |
-| initrd | 288d40bdcc39ec34831f81f42f6d872b0d5d58f1323ddfa70a75927edd463602 | 90-100% |
+| rootfs.vhdx | de737aae0dcb87f8d05de8ea62ac4912a13654457399083c36b860fbacf6bd6a | 0-80% |
+| vmlinuz | fee2a6d7c7a515f1a1e5bccf0c05d644edd335d2db8ac67262e1b6f398bdd98c | 80-90% |
+| initrd | cff623392ed50464391392526246a6d7b3d727d9dddded1010c2db260f284922 | 90-100% |
 
 **win32/x64:**
 
 | File | Checksum | Progress |
 |------|----------|----------|
-| rootfs.vhdx | 1d49e23b4cce8865412c201afa396df6112adb008b1476ec639df19b23c46be4 | 0-80% |
-| vmlinuz | bddf9d0ac039023ecba76b0056648d84dd434a98dcf24dc0e2e99c8c475987b7 | 80-90% |
-| initrd | 728bdde36326fe7ef949c3719681413ac91f1756cc3c042b7c7bee9a17ceb028 | 90-100% |
+| rootfs.vhdx | 75ede0ee2b78517edcee01f8702fae14ec3c08263b1478b5edc7622f00c24f92 | 0-80% |
+| vmlinuz | 143f6e61fd2ea05fe631d3b8fb59879a28d7fba00f1e5be5ebcb1f0040e9980c | 80-90% |
+| initrd | a06d6301ef16479535b0a570b7cdc56c6c25fa4d9813a4c2385cc58b314c51f3 | 90-100% |
 
 ## File Descriptions
 
@@ -65,7 +65,7 @@ vm-bundle/
 ├── initrd.zst               (164 MB compressed)
 ├── vm-bundle-config.json    (parsed from app.asar JS)
 ├── app-asar-extracted/      (full Electron app for investigation)
-└── .version                 (Claude Desktop version, e.g. "1.1.9493")
+└── .version                 (Claude Desktop version, e.g. "1.1.9669")
 ```
 
 ## How to Parse Config from JS
@@ -73,7 +73,7 @@ vm-bundle/
 The config is embedded as a minified object in index.js:
 
 ```javascript
-const qn = {sha:"fb30784...",files:{darwin:{arm64:[{name:"rootfs.img",checksum:"...",progressStart:0,progressEnd:100}],...},...}}
+const qn = {sha:"5680b11...",files:{darwin:{arm64:[{name:"rootfs.img",checksum:"...",progressStart:0,progressEnd:100}],...},...}}
 ```
 
 The extract script finds it with regex: `{sha:"[a-f0-9]{40}",files:{`
@@ -87,7 +87,7 @@ The extract script finds it with regex: `{sha:"[a-f0-9]{40}",files:{`
 
 ---
 
-## VM Rootfs Deep Dive (v1.1.9493)
+## VM Rootfs Deep Dive (v1.1.9493 — needs re-validation for v1.1.9669)
 
 ### Base System
 
@@ -214,5 +214,6 @@ Key installed packages: build-essential, curl, ffmpeg, gcc-11, ghostscript, git,
 
 | Claude Desktop Version | VM Bundle SHA | Notable Changes |
 |----------------------|--------------|-----------------|
-| 1.1.9493 | fb30784dadb34104626c8cf6d8f90dd47cd393cc | Current |
-| 1.1.9310 | (check previous commit) | Previous |
+| 1.1.9669 | 5680b11bcdab215cccf07e0c0bd1bd9213b0c25d | New VM images, all checksums changed, conda support |
+| 1.1.9493 | fb30784dadb34104626c8cf6d8f90dd47cd393cc | Previous |
+| 1.1.9310 | (check previous commit) | — |
