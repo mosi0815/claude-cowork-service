@@ -35,6 +35,12 @@ mkdir -p "$REPO_DIR/rpm/$ARCH"
 cp "$RPM_FILE" "$REPO_DIR/rpm/$ARCH/"
 echo "Copied $(basename "$RPM_FILE") to rpm/$ARCH/"
 
+# Sign the RPM package (gpgcheck=1 in repo config requires this)
+RPM_BASENAME=$(basename "$RPM_FILE")
+echo "%_gpg_name $GPG_KEY_ID" > ~/.rpmmacros
+rpm --addsign "$REPO_DIR/rpm/$ARCH/$RPM_BASENAME"
+echo "Signed $RPM_BASENAME"
+
 # Prune old versions for this arch — keep latest 2
 cd "$REPO_DIR/rpm/$ARCH"
 # shellcheck disable=SC2012
