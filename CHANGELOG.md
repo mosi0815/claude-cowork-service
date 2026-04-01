@@ -6,6 +6,9 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## 1.0.37 — 2026-03-31
 
+### Fixed
+- **claude-cowork.service**: Import Wayland/display environment variables (`WAYLAND_DISPLAY`, `XDG_SESSION_TYPE`, `XDG_CURRENT_DESKTOP`, `DISPLAY`, `DBUS_SESSION_BUS_ADDRESS`, `HYPRLAND_INSTANCE_SIGNATURE`, `SWAYSOCK`) via `ExecStartPre` so spawned CLI processes can access display and D-Bus services. Critical on Wayland-only systems (e.g. Ubuntu 25.10+). Fixes [#13](https://github.com/patrickjaja/claude-cowork-service/issues/13).
+
 ## 1.0.36 — 2026-03-31
 
 ## 1.0.35 — 2026-03-31
