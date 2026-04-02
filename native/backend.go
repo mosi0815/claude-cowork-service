@@ -293,6 +293,20 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 				log.Printf("[native] injected --brief flag (CLAUDE_CODE_BRIEF=1)")
 			}
 		}
+
+		// Inject file-delivery instructions for dispatch/agent sessions.
+		// The user is on a remote client (phone/browser) and can't access local paths.
+		// Without this, the model often uses computer:// markdown links instead of the
+		// attachments parameter, and files never reach the remote user.
+		args = append(args, "--append-system-prompt",
+			"IMPORTANT: When sharing files with the user, you MUST pass the absolute file path "+
+				"in the `attachments` array parameter of SendUserMessage. Do NOT use computer:// "+
+				"links or markdown file links — the user is on a remote client and cannot access "+
+				"local paths. After creating a file, call present_files first, then call "+
+				"SendUserMessage with both a message and the attachments array containing the file paths.")
+		if b.debug {
+			log.Printf("[native] injected --append-system-prompt for dispatch file delivery")
+		}
 	}
 
 	// Build mount path remappings (forward and reverse).

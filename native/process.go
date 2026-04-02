@@ -410,6 +410,12 @@ func (pt *processTracker) tryHandlePresentFiles(lp *localProcess, line string) b
 	// Desktop's renderer treats each {type:"text", text:...} entry in the result
 	// as a file path and calls readLocalFile on it to display file cards. We must
 	// return individual file paths — NOT descriptive text — to match this contract.
+	//
+	// After the file paths, we append a hint telling the model to also deliver
+	// the files via SendUserMessage's attachments parameter. Desktop logs a
+	// harmless warning for this non-path item, but processes the real paths fine.
+	// Without this hint, the model often skips attachments and uses markdown
+	// links that don't reach remote/mobile dispatch users.
 	isError := false
 	var contentItems []map[string]interface{}
 
@@ -431,6 +437,18 @@ func (pt *processTracker) tryHandlePresentFiles(lp *localProcess, line string) b
 				"text": p,
 			})
 		}
+		// Hint the model to also use SendUserMessage with attachments.
+		// present_files creates Desktop UI cards but they don't reach mobile/remote
+		// dispatch users. The attachments parameter on SendUserMessage uploads files
+		// for delivery to the remote client.
+		var paths []string
+		for _, p := range presented {
+			paths = append(paths, p)
+		}
+		contentItems = append(contentItems, map[string]interface{}{
+			"type": "text",
+			"text": fmt.Sprintf("NOTE: present_files cards may not be visible to the user (mobile/remote). To ensure delivery, also call SendUserMessage and include the file paths in the attachments parameter: %v", paths),
+		})
 	}
 
 	log.Printf("[native] present_files handled locally: %d presented, %d missing", len(presented), len(missing))
