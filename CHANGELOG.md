@@ -10,7 +10,16 @@ All notable changes to claude-cowork-service will be documented in this file.
 - **Dispatch file delivery**: Inject `--append-system-prompt` for dispatch sessions instructing the model to use `attachments` on `SendUserMessage` instead of `computer://` links that don't reach remote/mobile users
 - **present_files hint restored**: Re-add model hint in `present_files` response telling it to also call `SendUserMessage` with `attachments` (removed in df8037e when fixing INVALID_PATH)
 
+### Changed
+- **Upstream update to Claude Desktop v1.569.0** (from v1.2.234)
+- **cowork-svc.exe**: New `handleSendGuestResponse` handler function; binary grew ~11KB (11,174,736 → 11,186,000 bytes); same Go version (go1.24.13)
+- **VM bundle**: Unchanged — same SHA (`5680b11b...`), same file checksums
+- **SDK versions unchanged** — Electron 40.8.5, claude-agent-sdk 0.2.87, MCP SDK 1.28.0
+- **Updated reference docs** — `COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md` updated to v1.569.0
+
 ### Added
+- **New RPC method `sendGuestResponse`** — Handler for plugin permission bridge guest responses; no-op on native Linux (filesystem-based permission bridge handles this directly)
+- Protocol now at **22 RPC methods**, 8 event types
 - **README: Systemd service documentation** — Documents `ExecStartPre` environment import, all 8 Wayland/display env vars, and why they're needed
 - **README: Dependencies table** — Runtime (systemd, bash), functional (Claude Code CLI), optional (socat), and build-time (Go 1.21+) deps
 - **README: Troubleshooting section** — Covers Wayland display issues, ydotool/Computer Use, and `claude` binary resolution

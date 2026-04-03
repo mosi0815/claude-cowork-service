@@ -12,7 +12,7 @@ This is a native Linux backend daemon for Claude Desktop's Cowork feature. It re
 
 **Session dirs:** `~/.local/share/claude-cowork/sessions/<name>/`
 
-**Protocol:** 21 RPC methods over length-prefixed JSON (4-byte big-endian header, max 10 MB per message).
+**Protocol:** 22 RPC methods over length-prefixed JSON (4-byte big-endian header, max 10 MB per message).
 
 **Key constraint:** The upstream binary (`cowork-svc.exe`) is managed remotely by Anthropic and changes without notice. Every RPC method, parameter name, and protocol behavior can change between releases. This makes the project inherently fragile --- protocol documentation and handler code must be re-validated on each upstream update.
 
@@ -72,7 +72,7 @@ make test
 - `bin/` --- Extracted from Claude Desktop Windows installer (`cowork-svc.exe` lives alongside `app.asar`, locale JSONs, icons)
 - `vm-bundle/` --- VM images + config downloaded from Anthropic CDN
 - Both directories have `.version` files tracking the Claude Desktop version they were extracted from
-- Currently at version **1.2.234**
+- Currently at version **1.569.0**
 
 ## Version-Sensitive Artifacts
 

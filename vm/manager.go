@@ -347,6 +347,14 @@ func (m *Manager) GetDownloadStatus() string {
 	return "NotDownloaded"
 }
 
+func (m *Manager) SendGuestResponse(id string, resultJSON string, errMsg string) error {
+	// TODO: forward response to VM guest via vsock when VM mode is active
+	if m.debug {
+		log.Printf("[vm] sendGuestResponse id=%s (stub)", id)
+	}
+	return nil
+}
+
 func (m *Manager) emitEvent(event interface{}) {
 	for _, cb := range m.subscribers {
 		if cb != nil {

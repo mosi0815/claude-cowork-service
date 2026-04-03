@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference — v1.2.234
+# Cowork RPC Protocol Reference — v1.569.0
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -67,7 +67,7 @@ Unknown method names receive a success response with `null` result (passthrough 
 
 ---
 
-## RPC Methods (21 total)
+## RPC Methods (22 total)
 
 ### 1. `configure`
 
@@ -585,6 +585,31 @@ Creates a virtual disk image (e.g., for conda environments). Used to create a 50
 
 ---
 
+### 22. `sendGuestResponse`
+
+Delivers a host response back to a VM guest process. Used by the plugin permission bridge: when a plugin shim in the VM requests permission for a sensitive operation, the host shows a permission prompt and sends the result back via this method.
+
+**Params:**
+```json
+{
+  "id": string,
+  "resultJson": string,
+  "error": string
+}
+```
+
+- `id`: The guest request ID to respond to.
+- `resultJson`: JSON-encoded result payload (empty string if error).
+- `error`: Error message (empty string on success).
+
+**Response:** `null`
+
+**Native Linux behavior:** No-op. On native Linux, the plugin permission bridge uses the filesystem directly (shims write to `.cowork-perm-req/`, host writes responses to `.cowork-perm-resp/`). In VM mode, this RPC delivers responses over vsock.
+
+**Added in:** v1.569.0
+
+---
+
 ## Event Types (8 total)
 
 Events are sent over the `subscribeEvents` connection as length-prefixed JSON messages (same framing as RPC responses, but without `success`/`id` fields).
@@ -875,6 +900,8 @@ These methods exist in cowork-svc.exe (from binary string analysis) but are not 
 **Newly implemented in v1.1.9669:** `createDiskImage`, `getSessionsDiskInfo`, `deleteSessionDirs` (all no-ops on native Linux).
 
 **v1.2.234:** No new RPC methods. Protocol remains at 21 methods and 8 event types.
+
+**v1.569.0:** New RPC method `sendGuestResponse` (22 methods, 8 event types). Used for the plugin permission bridge to deliver host responses back to VM guest processes.
 
 ---
 

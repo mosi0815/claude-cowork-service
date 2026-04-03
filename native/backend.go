@@ -258,7 +258,7 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 	// update_artifact) are handled by the VM runtime rather than the CLI. On native
 	// Linux there is no VM — the CLI must handle all tools directly.
 	//
-	// Default --disallowedTools from Desktop (as of v1.2.234, unchanged from v1.1.9669):
+	// Default --disallowedTools from Desktop (as of v1.569.0, unchanged from v1.1.9669):
 	//   AskUserQuestion, mcp__cowork__allow_cowork_file_delete,
 	//   mcp__cowork__present_files, mcp__cowork__launch_code_session,
 	//   mcp__cowork__create_artifact, mcp__cowork__update_artifact
@@ -421,6 +421,17 @@ func (b *Backend) SubscribeEvents(name string, callback func(event interface{}))
 
 func (b *Backend) GetDownloadStatus() string {
 	return "ready"
+}
+
+func (b *Backend) SendGuestResponse(id string, resultJSON string, errMsg string) error {
+	// No-op on native Linux — guest responses are delivered via the filesystem
+	// permission bridge (plugin shims write to .cowork-perm-req, host writes
+	// responses to .cowork-perm-resp). In VM mode this RPC delivers responses
+	// over vsock, but on native the shim and host share the same filesystem.
+	if b.debug {
+		log.Printf("[native] sendGuestResponse id=%s (no-op, native mode)", id)
+	}
+	return nil
 }
 
 // Shutdown kills all tracked processes.

@@ -27,6 +27,7 @@ type VMBackend interface {
 	SetDebugLogging(enabled bool)
 	SubscribeEvents(name string, callback func(event interface{})) (cancel func(), err error)
 	GetDownloadStatus() string
+	SendGuestResponse(id string, resultJSON string, errMsg string) error
 }
 
 // Server manages the Unix domain socket and client connections.

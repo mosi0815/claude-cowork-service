@@ -1,4 +1,4 @@
-# Cowork Service Binary Analysis — v1.2.234
+# Cowork Service Binary Analysis — v1.569.0
 
 ## Binary Overview
 
@@ -69,16 +69,16 @@ Claude Desktop (Electron, patched)
 
 ---
 
-## cowork-svc.exe Deep Analysis (v1.2.234)
+## cowork-svc.exe Deep Analysis (v1.569.0)
 
 | Property | Value |
 |----------|-------|
 | **File type** | PE32+ executable for MS Windows 6.01 (console), x86-64, 8 sections |
 | **Go version** | go1.24.13 |
 | **Module** | github.com/anthropics/cowork-win32-service |
-| **Build date** | 2026-04-01 |
-| **Size** | 11,174,736 bytes |
-| **SHA256** | d868ee069b5618a406c44b40a24eed2c86883a23bca7c867d16ac6ea5cf44d0b |
+| **Build date** | 2026-04-03 |
+| **Size** | 11,186,000 bytes |
+| **SHA256** | a31c0aed813d1a8384c31e6fdbcc0fc4b48c9c4d5ebefe659dea274a06101387 |
 
 ### Go Module Structure (from binary strings)
 
@@ -111,6 +111,7 @@ Three packages: `main`, `pipe`, `vm`
 - handleIsDebugLoggingEnabled
 - handleSetDebugLogging
 - handleCreateDiskImage
+- handleSendGuestResponse *(new in v1.569.0)*
 - handlePassthrough
 - handlePersistentRPC
 
@@ -189,13 +190,15 @@ Three packages: `main`, `pipe`, `vm`
 
 **v1.2.234:** No new handler functions. Binary is a rebuild with updated timestamps only (identical size).
 
+**v1.569.0:** New handler `handleSendGuestResponse` for plugin permission bridge guest responses. Binary grew ~11KB.
+
 ---
 
-## bin/ Directory Checksums (v1.2.234)
+## bin/ Directory Checksums (v1.569.0)
 
 | File | SHA256 |
 |------|--------|
-| cowork-svc.exe | d868ee069b5618a406c44b40a24eed2c86883a23bca7c867d16ac6ea5cf44d0b |
+| cowork-svc.exe | a31c0aed813d1a8384c31e6fdbcc0fc4b48c9c4d5ebefe659dea274a06101387 |
 | cowork-plugin-shim.sh | 2fbef5ee6c07c26a1f7cd9204e1b6d37537edd2b96c0ce025010b890cb5935e7 |
 | chrome-native-host.exe | *(check with sha256sum)* |
 | smol-bin.x64.vhdx | *(check with sha256sum)* |
@@ -207,7 +210,7 @@ Three packages: `main`, `pipe`, `vm`
 
 | Property | Value |
 |----------|-------|
-| **Package** | @ant/desktop v1.2.234 |
+| **Package** | @ant/desktop v1.569.0 |
 | **Electron** | 40.8.5 |
 | **Node requirement** | >=22.0.0 |
 
@@ -230,9 +233,22 @@ Three packages: `main`, `pipe`, `vm`
 - **Electron 40.8.5** — Upgraded from 40.4.1
 - **claude-agent-sdk-future 0.2.90-dev** — Updated from 0.2.86-dev
 
+### New in v1.569.0
+
+- **`sendGuestResponse` RPC method** — New handler in cowork-svc.exe for delivering host responses to VM guest processes (plugin permission bridge)
+- **`navigateHost` IPC** — New CoworkArtifactBridge method for host navigation from artifacts
+- **OperonSkills IPC** — Full CRUD for skills management (create, createFromFile, delete, get, list, listForAgent, update, attachAgents, detachAgent)
+- **Local skills management** — New `saveLocalSkill`, `deleteLocalSkill`, `revealLocalSkill` handlers
+- **SideChat** — New side-chat spawning functionality
+- **Dispatch improvements** — `translateDispatchAttachments`, `startDispatchChildSession`, `detachDispatchChildren`
+- **Teaching mode** — `cu_teach_session` telemetry events
+- **Artifact lifecycle** — New telemetry events: `cowork_artifacts_created`, `cowork_artifacts_updated`, `cowork_artifacts_imported`, `cowork_artifacts_exported`
+- **IPC UUID change** — Internal Electron IPC bridge UUID changed (no protocol impact)
+- **SDK versions unchanged** — Same Electron 40.8.5, same claude-agent-sdk versions
+
 ### Key Dependency Versions
 
-*(verified for v1.2.234)*
+*(verified for v1.569.0 — unchanged from v1.2.234)*
 
 | Package | Version | Changed from v1.1.9669 |
 |---------|---------|------------------------|
@@ -280,6 +296,7 @@ Three packages: `main`, `pipe`, `vm`
 
 | Claude Desktop Version | cowork-svc.exe Size | Notable Changes |
 |----------------------|-------------------|-----------------|
+| 1.569.0 | 11,186,000 bytes | New RPC method `sendGuestResponse` (plugin permission bridge); binary grew ~11KB |
 | 1.2.234 | 11,174,736 bytes | Rebuild only; Electron 40.8.5, dispatchCodeTasksPermissionMode, plugin permission bridge mounts |
 | 1.1.9669 | 11,174,736 bytes | New: cowork-plugin-shim.sh, conda disk support, plugin system, coworkArtifact.js |
 | 1.1.9493 | 11,162,448 bytes | Previous |

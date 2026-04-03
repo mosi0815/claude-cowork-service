@@ -79,6 +79,8 @@ func (h *Handler) Handle(conn net.Conn, payload []byte) {
 		h.handleDeleteSessionDirs(conn, req)
 	case "createDiskImage":
 		h.handleCreateDiskImage(conn, req)
+	case "sendGuestResponse":
+		h.handleSendGuestResponse(conn, req)
 	default:
 		if h.debug {
 			log.Printf("RPC: unknown method %q — returning success (passthrough)", req.Method)
@@ -175,6 +177,12 @@ type oauthTokenParams struct {
 
 type debugLoggingParams struct {
 	Enabled bool `json:"enabled"`
+}
+
+type sendGuestResponseParams struct {
+	ID         string `json:"id"`
+	ResultJSON string `json:"resultJson"`
+	Error      string `json:"error"`
 }
 
 func (h *Handler) handleConfigure(conn net.Conn, req Request) {
@@ -511,6 +519,19 @@ func (h *Handler) handleCreateDiskImage(conn net.Conn, req Request) {
 	}
 	if h.debug {
 		log.Printf("RPC: createDiskImage diskName=%q sizeGiB=%d (no-op, native mode)", p.DiskName, p.SizeGiB)
+	}
+	WriteResponse(conn, req.ID, nil)
+}
+
+func (h *Handler) handleSendGuestResponse(conn net.Conn, req Request) {
+	var p sendGuestResponseParams
+	if err := json.Unmarshal(req.Params, &p); err != nil {
+		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
+		return
+	}
+	if err := h.backend.SendGuestResponse(p.ID, p.ResultJSON, p.Error); err != nil {
+		WriteError(conn, req.ID, -32000, err.Error())
+		return
 	}
 	WriteResponse(conn, req.ID, nil)
 }
