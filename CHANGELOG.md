@@ -4,6 +4,15 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- **Upstream update to Claude Desktop v1.1348.0** (from v1.1062.0)
+- **cowork-svc.exe**: Rebuild only — same size (11,177,808 bytes), same Go version (go1.24.13), no new RPC methods or handler functions. Updated build timestamps and VCS revision
+- **VM bundle**: Unchanged — same SHA (`5680b11b...`), same file checksums
+- **SDK versions unchanged** — Electron 40.8.5, claude-agent-sdk 0.2.92, MCP SDK 1.28.0
+- **No Go code changes needed** — all 22 RPC methods, 8 event types, spawn parameters, and wire format are identical
+- **Minor Desktop-side enhancement**: Plugin MCPs now refresh after uninstall; IPC bridge UUID updated (no protocol impact)
+- **Updated reference docs** — `COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md` updated to v1.1348.0
+
 ## 1.0.44 — 2026-04-07
 
 ## 1.0.43 — 2026-04-05

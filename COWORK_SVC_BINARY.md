@@ -1,4 +1,4 @@
-# Cowork Service Binary Analysis — v1.1062.0
+# Cowork Service Binary Analysis — v1.1348.0
 
 ## Binary Overview
 
@@ -69,16 +69,16 @@ Claude Desktop (Electron, patched)
 
 ---
 
-## cowork-svc.exe Deep Analysis (v1.1062.0)
+## cowork-svc.exe Deep Analysis (v1.1348.0)
 
 | Property | Value |
 |----------|-------|
 | **File type** | PE32+ executable for MS Windows 6.01 (console), x86-64, 8 sections |
 | **Go version** | go1.24.13 |
 | **Module** | github.com/anthropics/cowork-win32-service |
-| **Build date** | 2026-04-06 |
+| **Build date** | 2026-04-08 |
 | **Size** | 11,177,808 bytes |
-| **SHA256** | d01ab801c2b57f14a1a8d2f2c8d4ca0fd856bf27569e0e24d6f2a8de086ce542 |
+| **SHA256** | 2432ded6cabcb9a5c85bfec696b7388ae46e00e16330f1002b3880822763dd51 |
 
 ### Go Module Structure (from binary strings)
 
@@ -195,13 +195,15 @@ Three packages: `main`, `pipe`, `vm`
 
 **v1.1062.0:** No new handlers. Internal cert handling refactored (`LoadTrustedCACertificates` → `enumerateRootStore`). New `vm/rpc_types.go` source file (type refactor, not new types). Binary shrank 8KB.
 
+**v1.1348.0:** No new handler functions. Rebuild only — same size (11,177,808 bytes), same Go version (go1.24.13). Updated build timestamps and VCS revision.
+
 ---
 
-## bin/ Directory Checksums (v1.1062.0)
+## bin/ Directory Checksums (v1.1348.0)
 
 | File | SHA256 |
 |------|--------|
-| cowork-svc.exe | d01ab801c2b57f14a1a8d2f2c8d4ca0fd856bf27569e0e24d6f2a8de086ce542 |
+| cowork-svc.exe | 2432ded6cabcb9a5c85bfec696b7388ae46e00e16330f1002b3880822763dd51 |
 | cowork-plugin-shim.sh | 2fbef5ee6c07c26a1f7cd9204e1b6d37537edd2b96c0ce025010b890cb5935e7 |
 | chrome-native-host.exe | *(check with sha256sum)* |
 | smol-bin.x64.vhdx | *(check with sha256sum)* |
@@ -213,7 +215,7 @@ Three packages: `main`, `pipe`, `vm`
 
 | Property | Value |
 |----------|-------|
-| **Package** | @ant/desktop v1.1062.0 |
+| **Package** | @ant/desktop v1.1348.0 |
 | **Electron** | 40.8.5 |
 | **Node requirement** | >=22.0.0 |
 
@@ -249,6 +251,11 @@ Three packages: `main`, `pipe`, `vm`
 - **IPC UUID change** — Internal Electron IPC bridge UUID changed (no protocol impact)
 - **SDK versions unchanged** — Same Electron 40.8.5, same claude-agent-sdk versions
 
+### New in v1.1348.0
+
+- **Rebuild only** — No new features, tools, or protocol changes. Minified variable names changed (different build), IPC bridge UUID updated, same SDK versions and Electron version as v1.1062.0
+- **Plugin MCP refresh** — Minor enhancement: plugin MCPs are refreshed after uninstall (`refreshPluginMcps()` call added)
+
 ### New in v1.1062.0
 
 - **Cowork onboarding system** — New `cowork-onboarding` MCP server with `show_onboarding_role_picker` tool; `setup-cowork` skill providing guided onboarding flow (role picking, skill intro, connector intro). Gate-checked, scoped to `sessionType==="cowork"`
@@ -268,7 +275,7 @@ Three packages: `main`, `pipe`, `vm`
 
 ### Key Dependency Versions
 
-*(verified for v1.1062.0)*
+*(verified for v1.1348.0 — identical to v1.1062.0)*
 
 | Package | Version | Changed from v1.569.0 |
 |---------|---------|------------------------|
@@ -314,6 +321,7 @@ Three packages: `main`, `pipe`, `vm`
 
 | Claude Desktop Version | cowork-svc.exe Size | Notable Changes |
 |----------------------|-------------------|-----------------|
+| 1.1348.0 | 11,177,808 bytes | Rebuild only — same size, same Go version, updated timestamps/VCS revision; no new RPC methods; SDK versions unchanged |
 | 1.1062.0 | 11,177,808 bytes | Internal cert refactor (`enumerateRootStore`), new `vm/rpc_types.go`; no new RPC methods; SDK 0.2.92; binary shrank 8KB |
 | 1.569.0 | 11,186,000 bytes | New RPC method `sendGuestResponse` (plugin permission bridge); binary grew ~11KB |
 | 1.2.234 | 11,174,736 bytes | Rebuild only; Electron 40.8.5, dispatchCodeTasksPermissionMode, plugin permission bridge mounts |

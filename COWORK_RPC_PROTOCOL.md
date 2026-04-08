@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference — v1.1062.0
+# Cowork RPC Protocol Reference — v1.1348.0
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -904,6 +904,8 @@ These methods exist in cowork-svc.exe (from binary string analysis) but are not 
 **v1.569.0:** New RPC method `sendGuestResponse` (22 methods, 8 event types). Used for the plugin permission bridge to deliver host responses back to VM guest processes.
 
 **v1.1062.0:** No new RPC methods. Protocol remains at 22 methods and 8 event types. All changes are in the Electron app layer (onboarding, search, deploy, marketplace, connectors, auto-fix, egress blocking).
+
+**v1.1348.0:** No new RPC methods. Protocol remains at 22 methods and 8 event types. Rebuild only — same binary size, same Go version, updated timestamps.
 
 ---
 
