@@ -4,6 +4,8 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+## 1.0.45 — 2026-04-08
+
 ### Changed
 - **Upstream update to Claude Desktop v1.1348.0** (from v1.1062.0)
 - **cowork-svc.exe**: Rebuild only — same size (11,177,808 bytes), same Go version (go1.24.13), no new RPC methods or handler functions. Updated build timestamps and VCS revision
