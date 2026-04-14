@@ -28,11 +28,11 @@ type ExitEvent struct {
 }
 
 // APIReachableEvent is emitted when the API becomes reachable from inside the VM.
-// Client validates: { reachability: "unknown"|"reachable"|"probably_unreachable"|"unreachable", willTryRecover: bool }
+// Desktop reads s.status from the pipe event and passes it to onApiReachability.
+// Valid values: "unknown", "reachable", "probably_unreachable", "unreachable".
 type APIReachableEvent struct {
-	Type           string `json:"type"`
-	Reachability   string `json:"reachability"`
-	WillTryRecover bool   `json:"willTryRecover"`
+	Type   string `json:"type"`
+	Status string `json:"status"`
 }
 
 // ErrorEvent is emitted when a process-level error occurs.
@@ -66,23 +66,41 @@ func NewExitEventWithSignal(processID string, code int, signal string) ExitEvent
 
 // NewAPIReachableEvent creates an API reachability event.
 func NewAPIReachableEvent(reachable bool) APIReachableEvent {
-	reachability := "unreachable"
+	status := "unreachable"
 	if reachable {
-		reachability = "reachable"
+		status = "reachable"
 	}
-	return APIReachableEvent{Type: "apiReachability", Reachability: reachability, WillTryRecover: false}
+	return APIReachableEvent{Type: "apiReachability", Status: status}
 }
 
 // StartupStepEvent is emitted to report VM startup progress.
-// The Windows cowork-svc uses this to report stages like CERTIFICATE, VirtualDiskAttachments.
+// Desktop guards with s.step && s.status: "started" means step began,
+// any other value (e.g. "completed") triggers stepCompleted.
 type StartupStepEvent struct {
-	Type string `json:"type"`
-	Step string `json:"step"`
+	Type   string `json:"type"`
+	Step   string `json:"step"`
+	Status string `json:"status"`
 }
 
 // NewStartupStepEvent creates a startup progress event.
-func NewStartupStepEvent(step string) StartupStepEvent {
-	return StartupStepEvent{Type: "startupStep", Step: step}
+func NewStartupStepEvent(step, status string) StartupStepEvent {
+	return StartupStepEvent{Type: "startupStep", Step: step, Status: status}
+}
+
+// NetworkStatusEvent is emitted to report network connectivity state.
+// Desktop handles case "networkStatus" with s.status: "CONNECTED" or "NOT_CONNECTED".
+type NetworkStatusEvent struct {
+	Type   string `json:"type"`
+	Status string `json:"status"`
+}
+
+// NewNetworkStatusEvent creates a network status event.
+func NewNetworkStatusEvent(connected bool) NetworkStatusEvent {
+	status := "NOT_CONNECTED"
+	if connected {
+		status = "CONNECTED"
+	}
+	return NetworkStatusEvent{Type: "networkStatus", Status: status}
 }
 
 // NewErrorEvent creates a process error event.

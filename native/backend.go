@@ -93,9 +93,12 @@ func (b *Backend) StartVM(name string) error {
 	// (both calls arrive simultaneously on different connections)
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		b.emitEvent(process.NewStartupStepEvent("CERTIFICATE"))
+		b.emitEvent(process.NewStartupStepEvent("CERTIFICATE", "started"))
+		b.emitEvent(process.NewStartupStepEvent("CERTIFICATE", "completed"))
 		b.emitEvent(map[string]string{"type": "vmStarted", "name": name})
-		b.emitEvent(process.NewStartupStepEvent("VirtualDiskAttachments"))
+		b.emitEvent(process.NewStartupStepEvent("VirtualDiskAttachments", "started"))
+		b.emitEvent(process.NewStartupStepEvent("VirtualDiskAttachments", "completed"))
+		b.emitEvent(process.NewNetworkStatusEvent(true))
 		b.emitEvent(process.NewAPIReachableEvent(true))
 	}()
 	return nil

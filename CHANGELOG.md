@@ -7,26 +7,26 @@ All notable changes to claude-cowork-service will be documented in this file.
 ## 1.0.46 — 2026-04-14
 
 ### Changed
-- **Upstream update to Claude Desktop v1.2278.0** (from v1.1617.0)
-- **cowork-svc.exe**: Binary grew 13.1% (11,179,344 → 12,643,664 bytes) due to new WPAD/PAC proxy auto-discovery feature linking full `net/http`, `crypto/tls`, and `compress/flate` packages. Same Go version (go1.24.13). No new RPC handler functions. New VM-internal features: `detectAutoProxyConfigURL`, `fetchPACScript`, `resolveWPADAndResend`. New JSON fields `pacScript` and `hostLoopbackIP` (both VM-internal proxy config)
+- **Upstream update to Claude Desktop v1.2581.0** (from v1.2278.0)
+- **cowork-svc.exe**: Clean rebuild, same size (12,643,664 bytes), same Go version (go1.24.13). No new RPC handler functions. Only build metadata changed (commit hash, timestamps)
 - **VM bundle**: Unchanged — same SHA (`5680b11b...`), same file checksums
-- **Electron 41.2.0** (was 40.8.5) — major Electron upgrade
-- **SDK versions**: claude-agent-sdk 0.2.101 (was 0.2.92), claude-agent-sdk-future 0.2.102-dev (was 0.2.93-dev), conway-client unchanged
-- **No Go code changes needed** — all 22 RPC methods, 8 event types, spawn parameters, and wire format are identical
 - **New Desktop-side features** (no pipe protocol impact):
-  - `window.cowork.sample()` — artifact API for lightweight Claude synthesis
-  - `coworkWebFetchViaApi` feature flag — routes `web_fetch` through Anthropic API
-  - `vmEgressPolicy()` — DNS/egress filtering control
-  - `forkSession` / `forkAtMessageUuid` — session forking
-  - `rewind` — session rewind
-  - `summarizeTranscript` — transcript summarization
-  - Vertex Auth (`triggerVertexAuth`, `revokeVertexAuth`) — Google Vertex AI enterprise auth
-  - `setBundledSkills` — skill management
-  - `CoworkRadar setCardStatus` — replaces `markCompleted`
-  - Skills staging in plugin shim — plugins now have access to bundled skills
-  - Extra privacy guidelines for bridge sessions via `CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES`
-  - New session files: `cowork-gb-cache.json`, `cowork_account_settings.json`
-- **Updated reference docs** — `COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md` updated to v1.2278.0
+  - `cowork-file` URL scheme — custom Electron protocol for native file preview within Desktop
+  - `coworkNativeFilePreview` feature flag — enables WebContentsView for previewing `.docx`, `.pptx`, `.pdf`, `.svg`, `.htm` files
+  - Office file conversion via LibreOffice (`soffice --headless --convert-to pdf`) inside VM
+  - `coworkKappa` feature flag — new Desktop-side gate
+  - `getCodeStats` IPC method — Electron-side code statistics (not a pipe RPC)
+  - Permission routing refactored — `handlePermissionResponse` now distinguishes `cowork` vs `ccd` products
+  - `getPermissionSessionRoute` method — routes permission requests to correct session type
+  - `cowork-plugin-shim.sh` updated — token gating (`cowork_require_token`), permission confirmation protocol (`cowork_gate`), multi-arch binary dispatch (`cowork_exec`)
+
+### Fixed
+- **`apiReachability` event JSON field** — Desktop reads `s.status` but our struct used `json:"reachability"`. Changed to `json:"status"` to match actual wire protocol
+- **`startupStep` event missing `status` field** — Desktop guards with `s.step && s.status` and distinguishes `"started"` vs `"completed"`. Added `Status` field and emit both phases for each step
+
+### Added
+- **`networkStatus` event type** — Desktop handles `case "networkStatus"` events with `"CONNECTED"` / `"NOT_CONNECTED"` status. Emitted as `"CONNECTED"` during native startup since host has direct network access
+- **Updated reference docs** — `COWORK_RPC_PROTOCOL.md` (9 event types), `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md` updated to v1.2581.0
 
 ## 1.0.45 — 2026-04-08
 

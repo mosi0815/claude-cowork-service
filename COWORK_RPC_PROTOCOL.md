@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference — v1.2278.0
+# Cowork RPC Protocol Reference — v1.2581.0
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -9,7 +9,7 @@
 
 - [Wire Protocol](#wire-protocol)
 - [RPC Methods (21 total)](#rpc-methods-21-total)
-- [Event Types (8 total)](#event-types-8-total)
+- [Event Types (9 total)](#event-types-9-total)
 - [Protocol Discoveries](#protocol-discoveries)
 - [Linux-Specific Adaptations](#linux-specific-adaptations)
 - [Session Types](#session-types)
@@ -610,7 +610,7 @@ Delivers a host response back to a VM guest process. Used by the plugin permissi
 
 ---
 
-## Event Types (8 total)
+## Event Types (9 total)
 
 Events are sent over the `subscribeEvents` connection as length-prefixed JSON messages (same framing as RPC responses, but without `success`/`id` fields).
 
@@ -666,14 +666,13 @@ Indicates whether the API is reachable from the execution environment.
 ```json
 {
   "type": "apiReachability",
-  "reachability": "reachable",
-  "willTryRecover": false
+  "status": "reachable"
 }
 ```
 
-**`reachability` values:** `"unknown"`, `"reachable"`, `"probably_unreachable"`, `"unreachable"`
+**`status` values:** `"unknown"`, `"reachable"`, `"probably_unreachable"`, `"unreachable"`
 
-**Notes:** Claude Desktop requires this event during startup. Without it, the client remains stuck waiting for the environment to become ready (Discovery #6).
+**Notes:** Claude Desktop requires this event during startup. Without it, the client remains stuck waiting for the environment to become ready (Discovery #6). Desktop reads `s.status` from the event (not `reachability` — corrected in v1.2581.0 update).
 
 ### 5. `error`
 
@@ -698,11 +697,14 @@ Reports VM/environment startup progress.
 ```json
 {
   "type": "startupStep",
-  "step": "CERTIFICATE"
+  "step": "CERTIFICATE",
+  "status": "completed"
 }
 ```
 
 **Known step values:** `"CERTIFICATE"`, `"VirtualDiskAttachments"`
+
+**`status` values:** `"started"` (step beginning), `"completed"` (step finished). Desktop guards with `s.step && s.status` — both fields must be truthy. Status `"started"` triggers `stepStarted()`; any other value triggers `stepCompleted()`.
 
 ### 7. `vmStarted`
 
@@ -725,6 +727,21 @@ Emitted when the VM (or native backend) has stopped.
   "name": "vm-name"
 }
 ```
+
+### 9. `networkStatus`
+
+Reports network connectivity state. Desktop uses this to detect when the VM has network access.
+
+```json
+{
+  "type": "networkStatus",
+  "status": "CONNECTED"
+}
+```
+
+**`status` values:** `"CONNECTED"`, `"NOT_CONNECTED"`
+
+**Notes:** On native Linux, emitted as `"CONNECTED"` during startup since the host has direct network access. Desktop starts a connection timeout timer on `"NOT_CONNECTED"` and clears it on `"CONNECTED"`.
 
 ---
 
@@ -761,7 +778,7 @@ During reverse engineering, 12 mismatches were found between the documented/expe
 ### Discovery #6: Client needs `apiReachability` event (not just `isGuestConnected`)
 
 - **Symptom:** Client stuck after boot, never proceeds to spawn.
-- **Fix:** Emit `apiReachability` with `reachability: "reachable"` during `startVM` event sequence.
+- **Fix:** Emit `apiReachability` with `status: "reachable"` during `startVM` event sequence.
 
 ### Discovery #7: Args also contain VM paths (not just cwd/env)
 
@@ -928,9 +945,10 @@ Desktop                          cowork-svc
    ├── startVM(name) ───────────────►│
    │◄─── {success: true} ────────────┤
    │                                  │  (500ms delay)
-   │◄─── startupStep CERTIFICATE ────┤
+   │◄─── startupStep CERTIFICATE ────┤  (started + completed)
    │◄─── vmStarted {name} ───────────┤
-   │◄─── startupStep VirtualDisk... ──┤
+   │◄─── startupStep VirtualDisk... ──┤  (started + completed)
+   │◄─── networkStatus CONNECTED ─────┤
    │◄─── apiReachability reachable ───┤
    │                                  │
    ├── spawn(command, args, env) ───►│

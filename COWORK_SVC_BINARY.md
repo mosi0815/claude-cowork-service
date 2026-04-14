@@ -1,4 +1,4 @@
-# Cowork Service Binary Analysis — v1.2278.0
+# Cowork Service Binary Analysis — v1.2581.0
 
 ## Binary Overview
 
@@ -15,12 +15,12 @@ The extract script pulls all files from the same directory level as cowork-svc.e
 | cowork-svc.exe | 12 MB | Windows Hyper-V backend (Go binary) |
 | app.asar | 23 MB | Claude Desktop Electron app (same as main app) |
 | chrome-native-host.exe | 1 MB | Chrome native messaging host for browser tools |
-| cowork-plugin-shim.sh | 7.5 KB | Plugin permission gating library (new in v1.1.9669, updated in v1.2.234) |
+| cowork-plugin-shim.sh | 7.5 KB | Plugin permission gating library (new in v1.1.9669, updated in v1.2581.0) |
 | smol-bin.x64.vhdx | 36 MB | Empty ext4 filesystem for sdk-daemon updater |
 | default.clod | 97 KB | Default configuration/data |
 | *.json (locale files) | ~15-75 KB each | UI translations (de-DE, en-US, es-419, etc.) |
 | *.png / *.ico | ~2-4 KB each | Tray icons (light/dark, various DPI) |
-| .version | 8 bytes | Version string ("1.2.234") |
+| .version | 8 bytes | Version string ("1.2581.0") |
 
 ## Windows Architecture
 
@@ -357,6 +357,7 @@ Three packages: `main`, `pipe`, `vm`
 
 | Claude Desktop Version | cowork-svc.exe Size | Notable Changes |
 |----------------------|-------------------|-----------------|
+| 1.2581.0 | 12,643,664 bytes | Clean rebuild, same size; no new RPC methods; new `cowork-file` URL scheme for native file preview; `coworkNativeFilePreview` + `coworkKappa` feature flags; LibreOffice document conversion; permission routing split (cowork vs ccd); `getCodeStats` IPC method; plugin shim updated |
 | 1.2278.0 | 12,643,664 bytes | +13.1% size; WPAD/PAC proxy auto-discovery (net/http, crypto/tls linked); no new RPC methods; Electron 41.2.0; SDK 0.2.101; new Desktop features: cowork.sample(), forkSession, rewind, vertexAuth, coworkWebFetchViaApi |
 | 1.1617.0 | 11,179,344 bytes | Rebuild +1.5 KB; TLS cert rotation; no new RPC methods; new Desktop features: coworkEgressAllowedHosts, canUseTool VM path guard, plugin shim integration |
 | 1.1348.0 | 11,177,808 bytes | Rebuild only — same size, same Go version, updated timestamps/VCS revision; no new RPC methods; SDK versions unchanged |
