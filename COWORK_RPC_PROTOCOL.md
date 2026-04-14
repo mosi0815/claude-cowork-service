@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference — v1.1617.0
+# Cowork RPC Protocol Reference — v1.2278.0
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -908,6 +908,8 @@ These methods exist in cowork-svc.exe (from binary string analysis) but are not 
 **v1.1348.0:** No new RPC methods. Protocol remains at 22 methods and 8 event types. Rebuild only — same binary size, same Go version, updated timestamps.
 
 **v1.1617.0:** No new RPC methods. Protocol remains at 22 methods and 8 event types. Desktop-side additions: `coworkEgressAllowedHosts` admin egress allowlist (merges into existing `allowedDomains` spawn param), `canUseTool` VM path guard, `cowork-plugin-shim.sh` session integration, `request_cowork_directory` storage guard. All are Desktop-side enforcement — no wire protocol changes.
+
+**v1.2278.0:** No new RPC methods. Protocol remains at 22 methods and 8 event types. cowork-svc.exe grew 13.1% from WPAD/PAC proxy auto-discovery (VM-internal only). All changes are Desktop-side: new IPC handlers (`forkSession`, `rewind`, `summarizeTranscript`, `vertexAuth`, `setBundledSkills`, `cowork.sample()`), new feature flags (`coworkWebFetchViaApi`, `vmEgressPolicy`), Electron 41.2.0, SDK 0.2.101. Wire protocol unchanged.
 
 ---
 

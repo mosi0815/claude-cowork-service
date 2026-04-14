@@ -1,4 +1,4 @@
-# Cowork Service Binary Analysis — v1.1617.0
+# Cowork Service Binary Analysis — v1.2278.0
 
 ## Binary Overview
 
@@ -12,8 +12,8 @@ The extract script pulls all files from the same directory level as cowork-svc.e
 
 | File | Size | Purpose |
 |------|------|---------|
-| cowork-svc.exe | 11 MB | Windows Hyper-V backend (Go binary) |
-| app.asar | 19 MB | Claude Desktop Electron app (same as main app) |
+| cowork-svc.exe | 12 MB | Windows Hyper-V backend (Go binary) |
+| app.asar | 23 MB | Claude Desktop Electron app (same as main app) |
 | chrome-native-host.exe | 1 MB | Chrome native messaging host for browser tools |
 | cowork-plugin-shim.sh | 7.5 KB | Plugin permission gating library (new in v1.1.9669, updated in v1.2.234) |
 | smol-bin.x64.vhdx | 36 MB | Empty ext4 filesystem for sdk-daemon updater |
@@ -69,16 +69,16 @@ Claude Desktop (Electron, patched)
 
 ---
 
-## cowork-svc.exe Deep Analysis (v1.1617.0)
+## cowork-svc.exe Deep Analysis (v1.2278.0)
 
 | Property | Value |
 |----------|-------|
 | **File type** | PE32+ executable for MS Windows 6.01 (console), x86-64, 8 sections |
 | **Go version** | go1.24.13 |
 | **Module** | github.com/anthropics/cowork-win32-service |
-| **Build date** | 2026-04-09 |
-| **Size** | 11,179,344 bytes |
-| **SHA256** | 7719a2745a85440af1692086e8f931158c79bd06ff4f426ae48fe0b0c2c876a9 |
+| **Build date** | 2026-04-13 |
+| **Size** | 12,643,664 bytes |
+| **SHA256** | 9d256f73b3fbd33b2dd1c163220dc601da7acb5280a2c13b08c10a44141a33bf |
 
 ### Go Module Structure (from binary strings)
 
@@ -199,13 +199,15 @@ Three packages: `main`, `pipe`, `vm`
 
 **v1.1617.0:** No new handler functions. Rebuild with minor size increase (11,177,808 → 11,179,344 bytes, +1.5 KB). Same Go version (go1.24.13). Updated build timestamps, VCS revision, and embedded TLS certificates (date rotation).
 
+**v1.2278.0:** No new RPC handler functions. Binary grew significantly (11,179,344 → 12,643,664 bytes, +13.1%) due to linking full `net/http`, `crypto/tls`, and `compress/flate` packages for new WPAD/PAC proxy auto-discovery feature. Same Go version (go1.24.13). New VM-internal features: `detectAutoProxyConfigURL`, `fetchPACScript`, `resolveWPADAndResend` (proxy auto-config for VM guest). New JSON fields: `pacScript` and `hostLoopbackIP` (both `omitempty`, VM-internal proxy config). New string `enableSessionEvents` found but not yet called by Desktop. `HVSocketConn.SetWriteDeadline` added.
+
 ---
 
-## bin/ Directory Checksums (v1.1617.0)
+## bin/ Directory Checksums (v1.2278.0)
 
 | File | SHA256 |
 |------|--------|
-| cowork-svc.exe | 7719a2745a85440af1692086e8f931158c79bd06ff4f426ae48fe0b0c2c876a9 |
+| cowork-svc.exe | 9d256f73b3fbd33b2dd1c163220dc601da7acb5280a2c13b08c10a44141a33bf |
 | cowork-plugin-shim.sh | 2fbef5ee6c07c26a1f7cd9204e1b6d37537edd2b96c0ce025010b890cb5935e7 |
 | chrome-native-host.exe | *(check with sha256sum)* |
 | smol-bin.x64.vhdx | *(check with sha256sum)* |
@@ -217,8 +219,8 @@ Three packages: `main`, `pipe`, `vm`
 
 | Property | Value |
 |----------|-------|
-| **Package** | @ant/desktop v1.1617.0 |
-| **Electron** | 40.8.5 |
+| **Package** | @ant/desktop v1.2278.0 |
+| **Electron** | 41.2.0 |
 | **Node requirement** | >=22.0.0 |
 
 ### New in v1.1.9669
@@ -252,6 +254,26 @@ Three packages: `main`, `pipe`, `vm`
 - **Artifact lifecycle** — New telemetry events: `cowork_artifacts_created`, `cowork_artifacts_updated`, `cowork_artifacts_imported`, `cowork_artifacts_exported`
 - **IPC UUID change** — Internal Electron IPC bridge UUID changed (no protocol impact)
 - **SDK versions unchanged** — Same Electron 40.8.5, same claude-agent-sdk versions
+
+### New in v1.2278.0
+
+- **Electron 41.2.0** (was 40.8.5) — major Electron upgrade
+- **SDK versions**: claude-agent-sdk 0.2.101 (was 0.2.92), claude-agent-sdk-future 0.2.102-dev (was 0.2.93-dev), conway-client unchanged
+- **cowork-svc.exe**: +13.1% binary size (11.2→12.6 MB) due to new WPAD/PAC proxy auto-discovery; same Go version (go1.24.13); no new RPC handler functions
+- **`window.cowork.sample()`** — New artifact API allowing dashboard artifacts to call Claude for lightweight synthesis (Desktop-side IPC, not pipe protocol)
+- **`coworkWebFetchViaApi` feature flag** — Routes `web_fetch` tool calls through Anthropic API instead of VM-direct fetch; adds `mcp__workspace__web_fetch` as workspace tool (Desktop-side)
+- **`vmEgressPolicy()`** — New Desktop method returning `{kind:"unrestricted"}`, `{kind:"allowlist",domains:[...]}`, or `null` for DNS/egress filtering (Desktop-side)
+- **`forkSession` / `forkAtMessageUuid`** — New session forking IPC (Desktop-side)
+- **`rewind`** — New session rewind IPC (Desktop-side)
+- **`summarizeTranscript`** — New transcript summarization IPC (Desktop-side)
+- **`readSessionImageAsDataUrl`** — New session image reading IPC (Desktop-side)
+- **Vertex Auth** — New `triggerVertexAuth`, `revokeVertexAuth` IPC handlers for Google Vertex AI enterprise auth (Desktop-side)
+- **`setBundledSkills`** — New IPC for skill management (Desktop-side)
+- **`CoworkRadar setCardStatus`** — Replaces `markCompleted` (Desktop-side rename)
+- **Skills staging in plugin shim** — Plugin shim now has access to bundled skills via `V9n()` staging
+- **Memory guidelines update** — Extra privacy guidelines appended for bridge sessions via `CLAUDE_COWORK_MEMORY_EXTRA_GUIDELINES`
+- **New session files** — `cowork-gb-cache.json` (GrowthBook feature flag cache), `cowork_account_settings.json` (account-level settings)
+- **No new RPC methods** — Protocol remains at 22 methods and 8 event types
 
 ### New in v1.1617.0
 
@@ -289,16 +311,16 @@ Three packages: `main`, `pipe`, `vm`
 
 ### Key Dependency Versions
 
-*(verified for v1.1617.0 — identical to v1.1348.0)*
+*(verified for v1.2278.0)*
 
-| Package | Version | Changed from v1.569.0 |
+| Package | Version | Changed from v1.1617.0 |
 |---------|---------|------------------------|
-| @anthropic-ai/claude-agent-sdk | 0.2.92 | was 0.2.87 |
-| @anthropic-ai/claude-agent-sdk-future | 0.2.93-dev.20260403 | was 0.2.90-dev.20260331 |
-| @anthropic-ai/conway-client | 0.2.0-dev.20260403 | was 0.2.0-dev.20260325 |
+| @anthropic-ai/claude-agent-sdk | 0.2.101 | was 0.2.92 |
+| @anthropic-ai/claude-agent-sdk-future | 0.2.102-dev.20260410 | was 0.2.93-dev.20260403 |
+| @anthropic-ai/conway-client | 0.2.0-dev.20260403 | unchanged |
 | @anthropic-ai/mcpb | 2.1.2 | — |
 | @anthropic-ai/sdk | ^0.70.0 | — |
-| electron | 40.8.5 | — |
+| electron | 41.2.0 | was 40.8.5 |
 | typescript | ~5.8.3 | — |
 | zod | ^3.25.64 | — |
 | ws | ^8.18.0 | — |
@@ -335,6 +357,7 @@ Three packages: `main`, `pipe`, `vm`
 
 | Claude Desktop Version | cowork-svc.exe Size | Notable Changes |
 |----------------------|-------------------|-----------------|
+| 1.2278.0 | 12,643,664 bytes | +13.1% size; WPAD/PAC proxy auto-discovery (net/http, crypto/tls linked); no new RPC methods; Electron 41.2.0; SDK 0.2.101; new Desktop features: cowork.sample(), forkSession, rewind, vertexAuth, coworkWebFetchViaApi |
 | 1.1617.0 | 11,179,344 bytes | Rebuild +1.5 KB; TLS cert rotation; no new RPC methods; new Desktop features: coworkEgressAllowedHosts, canUseTool VM path guard, plugin shim integration |
 | 1.1348.0 | 11,177,808 bytes | Rebuild only — same size, same Go version, updated timestamps/VCS revision; no new RPC methods; SDK versions unchanged |
 | 1.1062.0 | 11,177,808 bytes | Internal cert refactor (`enumerateRootStore`), new `vm/rpc_types.go`; no new RPC methods; SDK 0.2.92; binary shrank 8KB |
