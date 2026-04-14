@@ -95,7 +95,17 @@ nix run github:patrickjaja/claude-cowork-service
 
 ### ARM64 / aarch64 (Raspberry Pi 5, NVIDIA DGX Spark, Jetson, etc.)
 
-ARM64 packages are available via the same APT and DNF repos — your package manager picks the correct architecture automatically. The quick install script and Nix flake also support ARM64 natively.
+```bash
+# Debian/Ubuntu ARM64 (via APT repo — automatic updates)
+curl -fsSL https://patrickjaja.github.io/claude-cowork-service/install.sh | sudo bash
+sudo apt install claude-cowork-service
+
+# Fedora ARM64 (via DNF repo — automatic updates)
+curl -fsSL https://patrickjaja.github.io/claude-cowork-service/install-rpm.sh | sudo bash
+sudo dnf install claude-cowork-service
+```
+
+The APT and DNF repos serve both x86_64 and arm64 packages — your package manager picks the correct architecture automatically. The quick install script and Nix flake also support ARM64 natively.
 
 ### Quick Install (Any Distro, x86_64 + ARM64)
 
