@@ -4,6 +4,13 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+### Fixed
+- **APT install script hardcoded `arch=amd64`** — `packaging/apt/install.sh` and `packaging/apt/index.html` now detect architecture via `dpkg --print-architecture`, so ARM64 users (Raspberry Pi 5, Jetson, DGX Spark) get the correct `arm64` repo entry instead of a broken `amd64` one
+
+### Added
+- **Nix aarch64-linux support** — `flake.nix` (`supportedSystems`) and `packaging/nix/package.nix` (`meta.platforms`) now include `aarch64-linux`
+- **Raspberry Pi 5** added to supported ARM64 devices in README
+
 ## 1.0.47 — 2026-04-14
 
 ## 1.0.46 — 2026-04-14

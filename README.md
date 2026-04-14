@@ -93,9 +93,9 @@ nix run github:patrickjaja/claude-cowork-service
 
 > **Note:** Update by running `nix flake update` to pull the latest version. `nix run` always fetches the latest.
 
-### ARM64 / aarch64 (NVIDIA DGX Spark, Jetson, etc.)
+### ARM64 / aarch64 (Raspberry Pi 5, NVIDIA DGX Spark, Jetson, etc.)
 
-ARM64 packages are available via the same APT and DNF repos — your package manager picks the correct architecture automatically. The quick install script also auto-detects ARM64.
+ARM64 packages are available via the same APT and DNF repos — your package manager picks the correct architecture automatically. The quick install script and Nix flake also support ARM64 natively.
 
 ### Quick Install (Any Distro, x86_64 + ARM64)
 
