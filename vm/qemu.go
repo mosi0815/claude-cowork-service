@@ -1,10 +1,8 @@
 package vm
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
+	"bytes"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"os/exec"
@@ -21,7 +19,7 @@ import (
 type qemuLaunchSpec struct {
 	bundleDir    string
 	sessionDir   string
-	rootOverlay  string
+	rootDisk     string
 	sessionData  string
 	smolBinPath  string // optional
 	kernel       string
@@ -72,9 +70,11 @@ func startQEMU(spec qemuLaunchSpec, debug bool) (*qemuInstance, error) {
 		"-append", "root=LABEL=cloudimg-rootfs console=ttyS0 quiet",
 	)
 
-	// Rootfs overlay → /dev/vda
+	// Rootfs → /dev/vda. Mounted writable: matches Windows behaviour where
+	// the rootfs persists between boots, so apt-installed packages and other
+	// system-state edits survive a stop/start cycle.
 	args = append(args,
-		"-drive", fmt.Sprintf("file=%s,format=qcow2,if=virtio", spec.rootOverlay),
+		"-drive", fmt.Sprintf("file=%s,format=qcow2,if=virtio", spec.rootDisk),
 	)
 
 	// Session disk → /dev/vdb (formatted by guest sdk-daemon on first boot).
@@ -257,50 +257,65 @@ func killStalePID(stateDir string) {
 	os.Remove(pidFile)
 }
 
-// createOverlay creates a qcow2 copy-on-write overlay on top of baseImage.
-func createOverlay(baseImage, overlayPath string) error {
-	os.Remove(overlayPath)
-	cmd := exec.Command("qemu-img", "create", "-f", "qcow2",
-		"-b", baseImage, "-F", "qcow2", overlayPath)
-	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("qemu-img create: %s: %w", strings.TrimSpace(string(out)), err)
+// vhdxConvertedCanary is appended to a VHDX after we successfully convert
+// it to qcow2. On subsequent boots, presence of this trailer means the
+// sibling qcow2 is up to date. If Claude Desktop ships a fresh VHDX, the
+// canary is gone and we reconvert. Hashing multi-GB VHDX files on every
+// startup was the previous strategy and was unacceptably slow.
+var vhdxConvertedCanary = []byte("\x00COWORK-VHDX-CONVERTED-V1\x00")
+
+func vhdxHasCanary(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
 	}
-	return nil
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil || fi.Size() < int64(len(vhdxConvertedCanary)) {
+		return false
+	}
+	buf := make([]byte, len(vhdxConvertedCanary))
+	if _, err := f.ReadAt(buf, fi.Size()-int64(len(buf))); err != nil {
+		return false
+	}
+	return bytes.Equal(buf, vhdxConvertedCanary)
+}
+
+func appendVhdxCanary(path string) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_APPEND, 0)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	_, err = f.Write(vhdxConvertedCanary)
+	return err
 }
 
 // ensureVHDXConverted converts <basename>.vhdx → <basename>.qcow2 in
-// bundleDir. It caches the SHA-256 of the source VHDX alongside the qcow2
-// as <basename>.qcow2.sha256 so a bundle update (new VHDX shipped by
-// Claude Desktop) triggers a reconvert instead of silently reusing a
-// stale qcow2.
+// bundleDir, using a trailer canary on the source VHDX as the cache key.
+// Returns the qcow2 path. If the VHDX is missing but a qcow2 is already
+// present, that qcow2 is reused (supports users shipping only qcow2).
 func ensureVHDXConverted(bundleDir, basename string) (string, error) {
 	vhdxPath := filepath.Join(bundleDir, basename+".vhdx")
 	qcow2Path := filepath.Join(bundleDir, basename+".qcow2")
-	sumPath := qcow2Path + ".sha256"
 
-	if _, err := os.Stat(vhdxPath); err != nil {
-		// No source VHDX — reuse any cached qcow2 as-is. This supports
-		// users who ship only the pre-converted qcow2.
-		if _, statErr := os.Stat(qcow2Path); statErr == nil {
+	_, vhdxErr := os.Stat(vhdxPath)
+	_, qcow2Err := os.Stat(qcow2Path)
+
+	if vhdxErr != nil {
+		if qcow2Err == nil {
 			return qcow2Path, nil
 		}
-		return "", fmt.Errorf("%s not found: %w", vhdxPath, err)
+		return "", fmt.Errorf("%s not found: %w", vhdxPath, vhdxErr)
 	}
 
-	currentSum, err := sha256File(vhdxPath)
-	if err != nil {
-		return "", fmt.Errorf("hashing %s.vhdx: %w", basename, err)
+	if qcow2Err == nil && vhdxHasCanary(vhdxPath) {
+		return qcow2Path, nil
 	}
 
-	if _, err := os.Stat(qcow2Path); err == nil {
-		cachedSum, _ := os.ReadFile(sumPath)
-		if strings.TrimSpace(string(cachedSum)) == currentSum {
-			return qcow2Path, nil
-		}
-		log.Printf("[kvm] %s.vhdx changed — reconverting (cached=%q current=%s)",
-			basename, strings.TrimSpace(string(cachedSum)), currentSum[:16]+"…")
+	if qcow2Err == nil {
+		log.Printf("[kvm] %s.vhdx canary missing — reconverting", basename)
 		os.Remove(qcow2Path)
-		os.Remove(sumPath)
 	}
 
 	log.Printf("[kvm] converting %s.vhdx → qcow2 (this is slow on first run)", basename)
@@ -311,25 +326,11 @@ func ensureVHDXConverted(bundleDir, basename string) (string, error) {
 		return "", fmt.Errorf("converting %s.vhdx: %s: %w",
 			basename, strings.TrimSpace(string(out)), err)
 	}
-	if err := os.WriteFile(sumPath, []byte(currentSum+"\n"), 0o644); err != nil {
-		log.Printf("[kvm] could not write %s: %v (cache will be invalidated on next run)",
-			filepath.Base(sumPath), err)
+	if err := appendVhdxCanary(vhdxPath); err != nil {
+		log.Printf("[kvm] could not stamp canary on %s.vhdx: %v (will reconvert next run)",
+			basename, err)
 	}
 	return qcow2Path, nil
-}
-
-// sha256File streams path through a SHA-256 hasher and returns the hex digest.
-func sha256File(path string) (string, error) {
-	f, err := os.Open(path)
-	if err != nil {
-		return "", err
-	}
-	defer f.Close()
-	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 // findSmolBin returns an up-to-date smol-bin qcow2 path in the given dirs,

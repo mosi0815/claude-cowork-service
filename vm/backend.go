@@ -150,12 +150,11 @@ func (b *KvmBackend) StartVM(name string) error {
 	}
 	killStalePID(sessionDir)
 
-	overlayPath := filepath.Join(sessionDir, "overlay.qcow2")
-	if err := createOverlay(rootQcow2, overlayPath); err != nil {
-		return fmt.Errorf("creating overlay: %w", err)
-	}
-
-	sessionDiskPath := filepath.Join(sessionDir, "sessiondata.qcow2")
+	// sessiondata.qcow2 lives next to the other bundle images, not per-host
+	// session, mirroring upstream. The guest carves this disk into
+	// per-session subdirectories internally; tearing it down on stop would
+	// delete every resumable session's files.
+	sessionDiskPath := filepath.Join(bundleDir, "sessiondata.qcow2")
 	if err := ensureSessionDataDisk(sessionDiskPath); err != nil {
 		log.Printf("[kvm] session disk creation failed: %v", err)
 	}
@@ -205,7 +204,7 @@ func (b *KvmBackend) StartVM(name string) error {
 	spec := qemuLaunchSpec{
 		bundleDir:    bundleDir,
 		sessionDir:   sessionDir,
-		rootOverlay:  overlayPath,
+		rootDisk:     rootQcow2,
 		sessionData:  sessionDiskPath,
 		smolBinPath:  smolBinPath,
 		kernel:       filepath.Join(bundleDir, "vmlinuz"),

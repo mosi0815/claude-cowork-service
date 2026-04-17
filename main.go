@@ -29,12 +29,16 @@ func main() {
 		os.Exit(vm.RunVfsHelper(os.Args[2:]))
 	}
 
-	socketPath := flag.String("socket", defaultSocketPath(), "Unix socket path")
+	socketPath := flag.String("socket", "", "Unix socket path (default depends on backend)")
 	debug := flag.Bool("debug", false, "Enable debug logging")
 	backendName := flag.String("backend", defaultBackend(), "Backend: native or kvm")
 	bundlesDir := flag.String("bundles-dir", defaultBundlesDir(), "VM bundles directory (kvm backend only)")
 	showVersion := flag.Bool("version", false, "Show version and exit")
 	flag.Parse()
+
+	if *socketPath == "" {
+		*socketPath = defaultSocketPath(*backendName)
+	}
 
 	if *showVersion {
 		fmt.Printf("cowork-svc-linux %s\n", version)
@@ -80,11 +84,19 @@ func main() {
 	backend.Shutdown()
 }
 
-func defaultSocketPath() string {
-	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		return filepath.Join(xdg, "cowork-vm-service.sock")
+// defaultSocketPath picks the socket name from the backend so Claude Desktop
+// can tell which mode the daemon is running just by looking at what sockets
+// exist in $XDG_RUNTIME_DIR. Native keeps the historical name for
+// compatibility with the Windows `cowork-vm-service` client.
+func defaultSocketPath(backend string) string {
+	name := "cowork-vm-service.sock"
+	if backend == "kvm" {
+		name = "cowork-kvm-service.sock"
 	}
-	return "/tmp/cowork-vm-service.sock"
+	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
+		return filepath.Join(xdg, name)
+	}
+	return filepath.Join("/tmp", name)
 }
 
 // defaultBackend honors COWORK_VM_BACKEND env var (matches the JS service),
