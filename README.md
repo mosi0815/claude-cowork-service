@@ -1,95 +1,11 @@
-# claude-cowork-service — experimental KVM fork
+# claude-cowork-service
 
-> ⚠️ **Experimental fork of [`patrickjaja/claude-cowork-service`](https://github.com/patrickjaja/claude-cowork-service).**
-> This branch adds a real QEMU/KVM backend. It is under active development,
-> not packaged, and the install badges, AUR/APT/DNF repos, and release
-> workflow shown in the upstream README **do not apply here** (GitHub Actions
-> are disabled on this fork). Expect breakage. Do not use on machines you
-> care about. The native backend should continue to work, but the KVM
-> backend is the reason this fork exists and is where the rough edges live.
->
-> **You also need a matching fork of `claude-desktop-bin`.** Upstream
-> `claude-desktop-bin` patches Claude Desktop to speak to the native
-> daemon's socket. The KVM backend in this fork exposes a different socket
-> (`cowork-kvm-service.sock`) and expects a Desktop patched to find it. A
-> companion fork tracks the corresponding JS patches — use it, not the
-> upstream AUR package, if you want to exercise the KVM path end-to-end.
-
-## What's different in this fork
-
-- **Real KVM backend (`-backend=kvm`).** Upstream's `vm/` directory was a
-  dormant stub; this fork replaces it with a working implementation:
-  - `vm/backend.go` — session lifecycle, process tracking, host↔guest RPC
-  - `vm/bridge.go` — length-prefixed JSON over AF_VSOCK, with the guest
-    `sdk-daemon`
-  - `vm/qemu.go` — QEMU launch, root-disk boot (no throwaway overlay),
-    VHDX→qcow2 caching with a trailer-canary cache invalidator
-  - `vm/qmp.go` — QMP control channel for live networking / shutdown
-  - `vm/vfs.go` + `vm/helper.go` — virtiofs `$HOME` share driven by a helper
-    re-exec'd under `unshare --user --map-root-user --mount` (no host root
-    required)
-  - `vm/preflight.go` — gates startup on `/dev/kvm`, `qemu-system-x86_64`,
-    and vhost-vsock
-- **Backend-aware socket path.** Native keeps `cowork-vm-service.sock` for
-  Desktop compatibility; KVM uses `cowork-kvm-service.sock` so both daemons
-  can coexist in `$XDG_RUNTIME_DIR`. Select with `-backend=native|kvm` or
-  `COWORK_VM_BACKEND=…`.
-- **Session state persists across reboots.** The guest boots directly off
-  the converted root disk instead of a COW overlay, and the session disk is
-  shared across all sessions of a host.
-- **Centralized logging with line truncation.** New `logx/` package. Default
-  160-char budget with a `…(+N more)` hint for dropped bytes. New flags
-  `-log-full-lines` and `-log-max-len`, plus `COWORK_LOG_FULL=1` env. This
-  replaces two near-duplicate truncation helpers and fixes several call
-  sites that previously dumped multi-kilobyte JSON payloads at every `-debug`
-  tick.
-- **Legacy VM code removed.** `vm/manager.go`, `vm/network.go`,
-  `vm/vsock.go`, and `process/spawn.go` are gone — the new `backend.go`,
-  `bridge.go`, and `qmp.go` subsume their roles with a cleaner architecture.
-
-See [`CHANGELOG.md`](CHANGELOG.md) under `## Unreleased` for the full list.
-
-## Running the KVM backend
-
-Prereqs:
-
-- `qemu-system-x86_64`
-- `virtiofsd` on `$PATH` (the VFS helper re-execs it inside an unprivileged
-  user+mount namespace to share `$HOME` with the guest — on most distros
-  this is packaged separately from QEMU; e.g. `pacman -S virtiofsd`,
-  `apt install virtiofsd`)
-- `/dev/kvm` readable by your user
-- vhost-vsock kernel module loaded (`modprobe vhost_vsock`)
-- A Claude-Desktop-compatible VM bundle under `~/.config/Claude/vm_bundles/`.
-  You don't have to fetch this yourself — the matching fork of
-  `claude-desktop-bin` downloads the bundle automatically on first launch
-  of the Cowork tab, same way upstream Desktop provisions it on macOS and
-  Windows.
-
-```bash
-# Build
-make build
-
-# Run manually with debug logging (systemd unit still targets native mode)
-./cowork-svc-linux -backend=kvm -debug
-
-# Or via env var — pairs with the matching claude-desktop-bin fork
-COWORK_VM_BACKEND=kvm ./cowork-svc-linux
-```
-
-Startup logs are prefixed `[kvm]`; look for `sdk-daemon connected via vsock`
-to confirm the guest came up. `-log-full-lines` disables truncation when you
-need to see a complete RPC/event payload.
-
----
-
-## Upstream README
-
-The rest of this document is inherited from upstream and describes the
-native backend, the RPC protocol, and the Dispatch integration. Most of it
-still applies — only the KVM-specific additions above are new.
-
----
+[![Claude Desktop](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/version-check.json)](https://claude.ai/download)
+[![AUR version](https://img.shields.io/aur/version/claude-cowork-service)](https://aur.archlinux.org/packages/claude-cowork-service)
+[![APT repo](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/apt-repo.json)](https://patrickjaja.github.io/claude-cowork-service/)
+[![RPM repo](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/rpm-repo.json)](https://patrickjaja.github.io/claude-cowork-service/)
+[![Nix flake](https://img.shields.io/endpoint?url=https://patrickjaja.github.io/claude-cowork-service/badges/nix.json)](https://github.com/patrickjaja/claude-cowork-service/blob/main/flake.nix)
+[![Build & Release](https://github.com/patrickjaja/claude-cowork-service/actions/workflows/build-and-release.yml/badge.svg)](https://github.com/patrickjaja/claude-cowork-service/actions/workflows/build-and-release.yml)
 
 Native Linux backend for Claude Desktop's **Cowork** feature. Reverse-engineered from Windows [`cowork-svc.exe`](https://github.com/anthropics/cowork-win32-service) bundled with Claude Desktop v1.1.4173.
 
@@ -363,13 +279,6 @@ The JS patches in claude-desktop-bin that enable Cowork on Linux are:
 - `fix_cowork_linux.py` — extends TypeScript VM client to Linux, replaces Windows pipe with Unix socket
 - `fix_cowork_error_message.py` — shows Linux-specific guidance when daemon isn't running
 
-> **Fork note.** The upstream AUR build of `claude-desktop-bin` patches Desktop
-> to talk to the **native** socket (`cowork-vm-service.sock`). The KVM backend
-> in this fork listens on `cowork-kvm-service.sock`, which upstream Desktop
-> will not probe. Running the KVM path end-to-end requires a matching fork of
-> `claude-desktop-bin` with patches for the KVM socket — use that, not the
-> stock AUR package.
-
 ## Architecture
 
 ```
@@ -501,16 +410,63 @@ grep 'present_files handled' /tmp/cowork-debug.log
 grep 'stripping --disallowedTools' /tmp/cowork-debug.log
 ```
 
-## VM Backend (Dormant)
+## KVM Backend (Experimental)
 
-The `vm/` directory contains a full QEMU/KVM backend implementation:
-- `vm/manager.go` — VM lifecycle (create, start, stop)
-- `vm/qemu.go` — QEMU instance with direct kernel boot, COW overlays
-- `vm/vsock.go` — AF_VSOCK communication with guest sdk-daemon
-- `vm/bundle.go` — VHDX→qcow2 conversion, zstd decompression
-- `vm/network.go` — QEMU user-mode and bridge networking
+Alongside the default native backend, the daemon includes a real QEMU/KVM backend that runs Cowork sessions inside a virtual machine — matching the sandboxed execution model used on macOS and Windows. The default remains native mode; existing users are unaffected.
 
-This code works but is not used by the native backend. It's retained for potential future sandboxed execution mode.
+### Enabling KVM mode
+
+```bash
+# Via CLI flag
+./cowork-svc-linux -backend=kvm
+
+# Via environment variable
+COWORK_VM_BACKEND=kvm ./cowork-svc-linux
+
+# With debug logging
+./cowork-svc-linux -backend=kvm -debug
+```
+
+### Prerequisites
+
+| Requirement | Notes |
+|-------------|-------|
+| `qemu-system-x86_64` | QEMU system emulator |
+| `virtiofsd` | Packaged separately from QEMU on most distros (e.g. `pacman -S virtiofsd`, `apt install virtiofsd`) |
+| `/dev/kvm` | Must be readable by your user |
+| `/dev/vhost-vsock` | Load the kernel module: `modprobe vhost_vsock` |
+| Unprivileged user namespaces | The virtiofs helper re-execs itself under `unshare --user --map-root-user --mount` to share `$HOME` with the guest — no host root required |
+
+### Socket path
+
+KVM mode listens on `$XDG_RUNTIME_DIR/cowork-kvm-service.sock`, separate from the native backend's `cowork-vm-service.sock`. This means both backends can coexist on the same machine. Claude Desktop must be patched to probe the KVM socket when using this mode.
+
+### Architecture
+
+The KVM backend is implemented in the `vm/` package:
+
+| File | Role |
+|------|------|
+| `vm/backend.go` | Session lifecycle, process tracking, host-to-guest RPC |
+| `vm/bridge.go` | Length-prefixed JSON over AF_VSOCK with the guest `sdk-daemon` |
+| `vm/qemu.go` | QEMU launch, root-disk boot, VHDX-to-qcow2 caching with trailer-canary cache invalidation |
+| `vm/qmp.go` | QMP control channel for live networking and shutdown |
+| `vm/vfs.go` + `vm/helper.go` | virtiofs `$HOME` share via unprivileged user namespace helper |
+| `vm/preflight.go` | Gates startup on `/dev/kvm`, `qemu-system-x86_64`, and vhost-vsock |
+
+### Key design decisions
+
+- **Direct root-disk boot.** The guest boots directly off the converted root disk instead of a COW overlay, so session state persists across reboots.
+- **No host root required.** The virtiofs helper uses `unshare --user --map-root-user --mount` to share `$HOME` with the guest without elevated privileges.
+- **Centralized logging.** The `logx/` package provides configurable line truncation (default 160 chars) with overflow hints. Use `-log-full-lines` or `COWORK_LOG_FULL=1` to disable truncation when debugging RPC payloads.
+
+### VM bundle
+
+The KVM backend expects a Claude-Desktop-compatible VM bundle under `~/.config/Claude/vm_bundles/`. Claude Desktop downloads this bundle automatically on first launch of the Cowork tab (same provisioning flow as macOS and Windows).
+
+Startup logs are prefixed `[kvm]`; look for `sdk-daemon connected via vsock` to confirm the guest came up.
+
+See [`CHANGELOG.md`](CHANGELOG.md) for the full list of KVM-related changes.
 
 ## Testing
 
@@ -601,4 +557,3 @@ These are re-validated on every upstream Claude Desktop release. See [update-pro
 >
 > This project is not affiliated with, endorsed by, or sponsored by Anthropic.
 > "Claude" is a trademark of Anthropic PBC.
-
