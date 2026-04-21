@@ -45,14 +45,16 @@ type Backend struct {
 	cpus    int
 
 	tracker     *processTracker
-	subscribers []func(event interface{})
+	subscribers map[uint64]func(event interface{})
+	nextSubID   uint64
 	mu          sync.RWMutex
 }
 
 // NewBackend creates a native backend that runs processes on the host.
 func NewBackend(debug bool) *Backend {
 	b := &Backend{
-		debug: debug,
+		debug:       debug,
+		subscribers: make(map[uint64]func(event interface{})),
 	}
 	b.tracker = newProcessTracker(b.emitEvent, debug)
 	return b
@@ -465,17 +467,15 @@ func (b *Backend) SetDebugLogging(enabled bool) {
 
 func (b *Backend) SubscribeEvents(name string, callback func(event interface{})) (func(), error) {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.subscribers = append(b.subscribers, callback)
-	idx := len(b.subscribers) - 1
+	b.nextSubID++
+	id := b.nextSubID
+	b.subscribers[id] = callback
+	b.mu.Unlock()
 
 	cancel := func() {
 		b.mu.Lock()
-		defer b.mu.Unlock()
-		if idx < len(b.subscribers) {
-			b.subscribers[idx] = nil
-		}
+		delete(b.subscribers, id)
+		b.mu.Unlock()
 	}
 
 	return cancel, nil
@@ -535,13 +535,13 @@ func (b *Backend) Shutdown() {
 
 func (b *Backend) emitEvent(event interface{}) {
 	b.mu.RLock()
-	subs := make([]func(event interface{}), len(b.subscribers))
-	copy(subs, b.subscribers)
+	subs := make([]func(event interface{}), 0, len(b.subscribers))
+	for _, cb := range b.subscribers {
+		subs = append(subs, cb)
+	}
 	b.mu.RUnlock()
 
 	for _, cb := range subs {
-		if cb != nil {
-			go cb(event)
-		}
+		go cb(event)
 	}
 }

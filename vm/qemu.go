@@ -252,6 +252,14 @@ func killStalePID(stateDir string) {
 		_ = os.Remove(pidFile) // process already gone
 		return
 	}
+	// Identity check: after a daemon crash the PID may have been reused by
+	// an unrelated same-UID process (editor, compiler, browser tab). Verify
+	// /proc/<pid>/exe points at a qemu-system binary before signalling.
+	if !isQemuProcess(pid) {
+		log.Printf("[kvm] PID %d in %s is not a QEMU process — removing stale pidfile without signalling", pid, pidFile)
+		_ = os.Remove(pidFile)
+		return
+	}
 	log.Printf("[kvm] killing stale QEMU (PID %d)", pid)
 	if err := proc.Signal(syscall.SIGTERM); err != nil {
 		log.Printf("[kvm] SIGTERM stale QEMU %d: %v", pid, err)
@@ -268,6 +276,23 @@ func killStalePID(stateDir string) {
 	}
 	time.Sleep(200 * time.Millisecond)
 	_ = os.Remove(pidFile)
+}
+
+// isQemuProcess reports whether /proc/<pid>/exe points at a qemu-system
+// binary. Used by killStalePID to avoid signalling an unrelated same-UID
+// process that happens to have inherited a recycled PID after a crash that
+// left a stale qemu.pid on disk.
+func isQemuProcess(pid int) bool {
+	exe, err := os.Readlink(fmt.Sprintf("/proc/%d/exe", pid))
+	if err != nil {
+		// Readlink on /proc/<pid>/exe returns EACCES if we lack permission
+		// (e.g. the PID belongs to a different UID). In that case treat it
+		// as "not ours" — proc.Signal(0) earlier already confirmed same UID,
+		// so an EACCES here is genuinely anomalous and we should bail.
+		return false
+	}
+	base := filepath.Base(exe)
+	return strings.HasPrefix(base, "qemu-system-")
 }
 
 // vhdxConvertedCanary is appended to a VHDX after we successfully convert

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/patrickjaja/claude-cowork-service/logx"
@@ -30,6 +31,7 @@ type KvmBackend struct {
 	memoryMB    int
 	cpus        int
 	started     bool
+	starting    bool // pipeline in flight; prevents concurrent StartVM double-launch
 	sessionDir  string
 	sessionName string
 	bundleDir   string
@@ -50,7 +52,8 @@ type KvmBackend struct {
 	lastActivity atomic.Int64 // unix nanos — updated by Touch()
 	watchdogStop chan struct{}
 
-	subscribers []func(event interface{})
+	subscribers map[uint64]func(event interface{})
+	nextSubID   uint64
 	subMu       sync.RWMutex
 }
 
@@ -73,12 +76,13 @@ func NewKvmBackend(bundlesDir string, debug bool) *KvmBackend {
 		log.Printf("[kvm] MkdirAll %s: %v", baseDir, err)
 	}
 	return &KvmBackend{
-		baseDir:    baseDir,
-		bundlesDir: bundlesDir,
-		debug:      debug,
-		memoryMB:   4096,
-		cpus:       4,
-		processes:  make(map[string]struct{}),
+		baseDir:     baseDir,
+		bundlesDir:  bundlesDir,
+		debug:       debug,
+		memoryMB:    4096,
+		cpus:        4,
+		processes:   make(map[string]struct{}),
+		subscribers: make(map[uint64]func(event interface{})),
 	}
 }
 
@@ -113,7 +117,18 @@ func (b *KvmBackend) StartVM(name string) error {
 		log.Printf("[kvm] startVM: already running")
 		return nil
 	}
+	if b.starting {
+		b.mu.Unlock()
+		log.Printf("[kvm] startVM: another start already in progress — ignoring concurrent call")
+		return nil
+	}
+	b.starting = true
 	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		b.starting = false
+		b.mu.Unlock()
+	}()
 
 	check := CheckKvmPrerequisites()
 	if !check.OK {
@@ -240,6 +255,11 @@ func (b *KvmBackend) StartVM(name string) error {
 	if err := bridge.Listen(func() { close(guestReady) }); err != nil {
 		log.Printf("[kvm] bridge.Listen failed: %v — tearing down VM", err)
 		qemu.Shutdown(qmp)
+		if qmp != nil {
+			if cerr := qmp.Close(); cerr != nil && b.debug {
+				log.Printf("[kvm] qmp close (bridge-listen teardown): %v", cerr)
+			}
+		}
 		helper.Stop()
 		return fmt.Errorf("bridge listen: %w", err)
 	}
@@ -631,16 +651,15 @@ func (b *KvmBackend) SetDebugLogging(enabled bool) {
 
 func (b *KvmBackend) SubscribeEvents(name string, callback func(event interface{})) (func(), error) {
 	b.subMu.Lock()
-	b.subscribers = append(b.subscribers, callback)
-	idx := len(b.subscribers) - 1
+	b.nextSubID++
+	id := b.nextSubID
+	b.subscribers[id] = callback
 	b.subMu.Unlock()
 
 	cancel := func() {
 		b.subMu.Lock()
-		defer b.subMu.Unlock()
-		if idx < len(b.subscribers) {
-			b.subscribers[idx] = nil
-		}
+		delete(b.subscribers, id)
+		b.subMu.Unlock()
 	}
 	return cancel, nil
 }
@@ -790,9 +809,7 @@ func (b *KvmBackend) emit(event interface{}) {
 	b.subMu.RLock()
 	subs := make([]func(event interface{}), 0, len(b.subscribers))
 	for _, s := range b.subscribers {
-		if s != nil {
-			subs = append(subs, s)
-		}
+		subs = append(subs, s)
 	}
 	b.subMu.RUnlock()
 	for _, cb := range subs {
@@ -801,22 +818,47 @@ func (b *KvmBackend) emit(event interface{}) {
 }
 
 // allocateCID picks an unused vsock CID, persisting the counter between runs.
-// CIDs 0-2 are reserved by the kernel.
+// CIDs 0-2 are reserved by the kernel. The read-modify-write is serialized
+// with flock(LOCK_EX) on the counter file so two concurrent daemons (or two
+// concurrent StartVM calls in the same process) cannot hand out the same CID
+// — the kernel rejects duplicate vhost-vsock guest-cid bindings and the
+// resulting QEMU exit surfaces as a generic "exited immediately" error that
+// points operators at disk/KVM instead of the real cause.
 func (b *KvmBackend) allocateCID() uint32 {
 	cidFile := filepath.Join(b.baseDir, ".next_cid")
-	cid := uint32(3)
-	if data, err := os.ReadFile(cidFile); err == nil {
-		var n uint32
-		if _, err := fmt.Sscanf(string(data), "%d", &n); err == nil && n >= 3 {
-			cid = n
+	const defaultCID = uint32(3)
+
+	f, err := os.OpenFile(cidFile, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		log.Printf("[kvm] open CID counter %s: %v — falling back to CID %d", cidFile, err, defaultCID)
+		return defaultCID
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		log.Printf("[kvm] flock CID counter: %v — falling back to CID %d", err, defaultCID)
+		return defaultCID
+	}
+	// LOCK_UN happens implicitly on Close; no explicit unlock needed.
+
+	cid := defaultCID
+	var buf [32]byte
+	if n, _ := f.ReadAt(buf[:], 0); n > 0 {
+		var parsed uint32
+		if _, err := fmt.Sscanf(string(buf[:n]), "%d", &parsed); err == nil && parsed >= 3 {
+			cid = parsed
 		}
 	}
 	next := cid + 1
 	if next >= 65535 {
 		next = 3
 	}
-	if err := os.WriteFile(cidFile, []byte(fmt.Sprintf("%d", next)), 0o644); err != nil {
-		log.Printf("[kvm] persisting CID counter to %s: %v", cidFile, err)
+	if err := f.Truncate(0); err != nil {
+		log.Printf("[kvm] truncate CID counter: %v", err)
+		return cid
+	}
+	if _, err := f.WriteAt([]byte(fmt.Sprintf("%d", next)), 0); err != nil {
+		log.Printf("[kvm] write CID counter: %v", err)
 	}
 	return cid
 }
