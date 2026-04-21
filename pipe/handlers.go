@@ -227,7 +227,7 @@ func (h *Handler) handleStartVM(conn net.Conn, req Request) {
 	if name == "" && p.BundlePath != "" {
 		name = filepath.Base(p.BundlePath)
 	}
-	if err := h.backend.StartVM(name); err != nil {
+	if err := h.backend.StartVM(name, p.BundlePath); err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return
 	}

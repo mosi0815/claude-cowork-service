@@ -84,7 +84,7 @@ func (b *Backend) CreateVM(name string) error {
 	return nil
 }
 
-func (b *Backend) StartVM(name string) error {
+func (b *Backend) StartVM(name string, bundlePath string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 

@@ -68,6 +68,17 @@ type pendingSdkInstall struct {
 	version    string
 }
 
+type vmRuntimeState struct {
+	qemu         *qemuInstance
+	qmp          *QmpClient
+	helper       *VfsHelper
+	bridge       *GuestBridge
+	sessionDir   string
+	sessionName  string
+	bundleDir    string
+	watchdogStop chan struct{}
+}
+
 func (p *pendingSdkInstall) forwardParams() map[string]interface{} {
 	if p == nil {
 		return nil
@@ -126,12 +137,18 @@ func (b *KvmBackend) CreateVM(name string) error {
 
 // StartVM boots the VM: prepare bundle, create session dir, launch virtiofsd
 // via helper, spawn QEMU, open QMP, wait for guest bridge connection.
-func (b *KvmBackend) StartVM(name string) error {
+func (b *KvmBackend) StartVM(name string, bundlePath string) error {
+	var stale vmRuntimeState
+	hadStale := false
+
 	b.mu.Lock()
 	if b.started {
-		b.mu.Unlock()
-		log.Printf("[kvm] startVM: already running")
-		return nil
+		stale, hadStale = b.takeExitedVMStateLocked()
+		if !hadStale {
+			b.mu.Unlock()
+			log.Printf("[kvm] startVM: already running")
+			return nil
+		}
 	}
 	if b.starting {
 		b.mu.Unlock()
@@ -146,6 +163,10 @@ func (b *KvmBackend) StartVM(name string) error {
 		b.mu.Unlock()
 	}()
 
+	if hadStale {
+		b.cleanupVMRuntime(stale, stale.sessionName, "[kvm] startVM: detected stale runtime after unexpected QEMU exit; cleaning up before restart")
+	}
+
 	check := CheckKvmPrerequisites()
 	if !check.OK {
 		b.emit(map[string]interface{}{
@@ -159,15 +180,9 @@ func (b *KvmBackend) StartVM(name string) error {
 		"type": "startupStep", "step": "prepare_session", "status": "running",
 	})
 
-	bundleDir, err := b.findBundle()
+	bundleDir, err := b.findBundle(bundlePath)
 	if err != nil {
 		return fmt.Errorf("no VM bundle available: %w", err)
-	}
-	// Decompress any .zst-wrapped bundle files (rootfs, vmlinuz, initrd)
-	// before attempting to convert or boot.
-	bm := NewBundleManager(b.baseDir, b.debug)
-	if err := bm.DecompressBundle(bundleDir); err != nil {
-		return fmt.Errorf("decompressing bundle: %w", err)
 	}
 	rootQcow2, err := ensureVHDXConverted(bundleDir, "rootfs")
 	if err != nil {
@@ -334,62 +349,26 @@ func (b *KvmBackend) StopVM(name string) error {
 		log.Printf("[kvm] stopVM %q: already stopped (no-op)", name)
 		return nil
 	}
-	qemu := b.qemu
-	qmp := b.qmp
-	helper := b.helper
-	bridge := b.bridge
-	sessionDir := b.sessionDir
-	watchdogStop := b.watchdogStop
-	b.started = false
-	b.qemu = nil
-	b.qmp = nil
-	b.helper = nil
-	b.bridge = nil
-	b.sessionDir = ""
-	b.watchdogStop = nil
+	state := b.takeVMRuntimeLocked()
 	b.mu.Unlock()
 
-	if watchdogStop != nil {
-		close(watchdogStop)
-	}
-
 	log.Printf("[kvm] stopVM %s", name)
-
-	if bridge != nil {
-		bridge.Close()
-	}
-	if qemu != nil {
-		qemu.Shutdown(qmp)
-	}
-	if qmp != nil {
-		if err := qmp.Close(); err != nil && b.debug {
-			log.Printf("[kvm] qmp close: %v", err)
-		}
-	}
-	if helper != nil {
-		helper.Stop()
-	}
-	if sessionDir != "" {
-		if err := os.RemoveAll(sessionDir); err != nil {
-			log.Printf("[kvm] session cleanup error: %v", err)
-		}
-	}
-
-	b.procMu.Lock()
-	b.processes = make(map[string]struct{})
-	b.procMu.Unlock()
-
-	b.emit(map[string]interface{}{
-		"type": "networkStatus", "status": "disconnected",
-	})
-	b.emit(map[string]interface{}{"type": "vmStopped", "name": name})
+	b.cleanupVMRuntime(state, name, "")
 	return nil
 }
 
 func (b *KvmBackend) IsRunning(name string) (bool, error) {
-	b.mu.RLock()
+	var stale vmRuntimeState
+	hadStale := false
+
+	b.mu.Lock()
+	stale, hadStale = b.takeExitedVMStateLocked()
 	qemu := b.qemu
-	b.mu.RUnlock()
+	b.mu.Unlock()
+	if hadStale {
+		b.cleanupVMRuntime(stale, stale.sessionName, "[kvm] isRunning: detected stale runtime after unexpected QEMU exit; cleaning up")
+		return false, nil
+	}
 	if qemu == nil {
 		return false, nil
 	}
@@ -933,16 +912,24 @@ func (b *KvmBackend) allocateCID() uint32 {
 // findBundle returns the first directory under bundlesDir that contains a
 // usable rootfs. Falls back to baseDir if Desktop hasn't placed anything in
 // bundlesDir yet.
-func (b *KvmBackend) findBundle() (string, error) {
+func (b *KvmBackend) findBundle(bundlePath string) (string, error) {
+	if bundlePath != "" {
+		requested := filepath.Clean(bundlePath)
+		if info, err := os.Stat(requested); err == nil && !info.IsDir() {
+			requested = filepath.Dir(requested)
+		}
+		if hasUsableRootfs(requested) {
+			return requested, nil
+		}
+		return "", fmt.Errorf("requested bundle %s has no rootfs.qcow2 or rootfs.vhdx", requested)
+	}
+
 	candidates := []string{b.bundlesDir, b.baseDir}
 	for _, dir := range candidates {
 		if dir == "" {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(dir, "rootfs.qcow2")); err == nil {
-			return dir, nil
-		}
-		if _, err := os.Stat(filepath.Join(dir, "rootfs.vhdx")); err == nil {
+		if hasUsableRootfs(dir) {
 			return dir, nil
 		}
 		entries, err := os.ReadDir(dir)
@@ -954,14 +941,95 @@ func (b *KvmBackend) findBundle() (string, error) {
 				continue
 			}
 			d := filepath.Join(dir, e.Name())
-			for _, f := range []string{"rootfs.qcow2", "rootfs.vhdx"} {
-				if _, err := os.Stat(filepath.Join(d, f)); err == nil {
-					return d, nil
-				}
+			if hasUsableRootfs(d) {
+				return d, nil
 			}
 		}
 	}
 	return "", fmt.Errorf("no rootfs in %s or %s", b.bundlesDir, b.baseDir)
+}
+
+func hasUsableRootfs(dir string) bool {
+	for _, f := range []string{"rootfs.qcow2", "rootfs.vhdx"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *KvmBackend) takeExitedVMStateLocked() (vmRuntimeState, bool) {
+	if !b.started {
+		return vmRuntimeState{}, false
+	}
+	if b.qemu != nil && b.qemu.IsRunning() {
+		return vmRuntimeState{}, false
+	}
+	return b.takeVMRuntimeLocked(), true
+}
+
+func (b *KvmBackend) takeVMRuntimeLocked() vmRuntimeState {
+	state := vmRuntimeState{
+		qemu:         b.qemu,
+		qmp:          b.qmp,
+		helper:       b.helper,
+		bridge:       b.bridge,
+		sessionDir:   b.sessionDir,
+		sessionName:  b.sessionName,
+		bundleDir:    b.bundleDir,
+		watchdogStop: b.watchdogStop,
+	}
+	b.started = false
+	b.qemu = nil
+	b.qmp = nil
+	b.helper = nil
+	b.bridge = nil
+	b.sessionDir = ""
+	b.sessionName = ""
+	b.bundleDir = ""
+	b.watchdogStop = nil
+	return state
+}
+
+func (b *KvmBackend) cleanupVMRuntime(state vmRuntimeState, name string, reason string) {
+	if reason != "" {
+		log.Printf("%s", reason)
+	}
+	if state.watchdogStop != nil {
+		close(state.watchdogStop)
+	}
+	if state.bridge != nil {
+		state.bridge.Close()
+	}
+	if state.qemu != nil {
+		state.qemu.Shutdown(state.qmp)
+	}
+	if state.qmp != nil {
+		if err := state.qmp.Close(); err != nil && b.debug {
+			log.Printf("[kvm] qmp close: %v", err)
+		}
+	}
+	if state.helper != nil {
+		state.helper.Stop()
+	}
+	if state.sessionDir != "" {
+		if err := os.RemoveAll(state.sessionDir); err != nil {
+			log.Printf("[kvm] session cleanup error: %v", err)
+		}
+	}
+
+	b.procMu.Lock()
+	b.processes = make(map[string]struct{})
+	b.procMu.Unlock()
+
+	stopName := name
+	if stopName == "" {
+		stopName = state.sessionName
+	}
+	b.emit(map[string]interface{}{
+		"type": "networkStatus", "status": "disconnected",
+	})
+	b.emit(map[string]interface{}{"type": "vmStopped", "name": stopName})
 }
 
 func randomID() string {
