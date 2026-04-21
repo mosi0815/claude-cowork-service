@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,7 +43,7 @@ type KvmBackend struct {
 	bridge *GuestBridge
 
 	// Pending state for methods called before the VM is fully up.
-	pendingSdkInstall map[string]interface{}
+	pendingSdkInstall *pendingSdkInstall
 	pendingSdkBind    *pendingBind
 
 	// Process bookkeeping — existence only; stdout/stderr/exit flow via events.
@@ -60,6 +61,21 @@ type KvmBackend struct {
 type pendingBind struct {
 	subpath string
 	mode    string
+}
+
+type pendingSdkInstall struct {
+	sdkSubpath string
+	version    string
+}
+
+func (p *pendingSdkInstall) forwardParams() map[string]interface{} {
+	if p == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"sdkSubpath": p.sdkSubpath,
+		"version":    p.version,
+	}
 }
 
 // keepaliveTimeout is how long the VM may run without any RPC activity from
@@ -275,11 +291,7 @@ func (b *KvmBackend) StartVM(name string) error {
 	b.helper = helper
 	b.bridge = bridge
 	b.watchdogStop = make(chan struct{})
-	b.lastActivity.Store(time.Now().UnixNano())
-	watchdogStop := b.watchdogStop
 	b.mu.Unlock()
-
-	go b.watchdogLoop(watchdogStop)
 
 	// Wait up to 90s for guest to connect. Return success either way so
 	// Desktop's UI can proceed; actual spawns will fail loud if needed.
@@ -298,6 +310,15 @@ func (b *KvmBackend) StartVM(name string) error {
 		b.emit(map[string]interface{}{
 			"type": "startupStep", "step": "wait_for_guest", "status": "failed",
 		})
+	}
+
+	b.mu.RLock()
+	watchdogStop := b.watchdogStop
+	startWatchdog := b.started && watchdogStop != nil
+	b.mu.RUnlock()
+	if startWatchdog {
+		b.lastActivity.Store(time.Now().UnixNano())
+		go b.watchdogLoop(watchdogStop)
 	}
 
 	b.emit(map[string]interface{}{"type": "vmStarted", "name": name})
@@ -579,16 +600,16 @@ func (b *KvmBackend) ReadFile(processName string, filePath string) ([]byte, erro
 func (b *KvmBackend) InstallSdk(sdkSubpath string, version string) error {
 	log.Printf("[kvm] installSdk %s@%s", sdkSubpath, version)
 
-	params := map[string]interface{}{
-		"sdkSubpath": sdkSubpath,
-		"version":    version,
+	pending := &pendingSdkInstall{
+		sdkSubpath: sdkSubpath,
+		version:    version,
 	}
 
 	b.mu.Lock()
 	helper := b.helper
 	bridge := b.bridge
 	helperReady := helper != nil
-	b.pendingSdkInstall = params
+	b.pendingSdkInstall = pending
 	if sdkSubpath != "" && !helperReady {
 		b.pendingSdkBind = &pendingBind{subpath: sdkSubpath, mode: "rw"}
 	}
@@ -610,19 +631,23 @@ func (b *KvmBackend) InstallSdk(sdkSubpath string, version string) error {
 }
 
 func (b *KvmBackend) runPendingSdkInstall() {
-	b.mu.Lock()
-	params := b.pendingSdkInstall
+	b.mu.RLock()
+	pending := b.pendingSdkInstall
 	bridge := b.bridge
-	b.pendingSdkInstall = nil
-	b.mu.Unlock()
-	if params == nil || bridge == nil || !bridge.IsConnected() {
+	b.mu.RUnlock()
+	if pending == nil || bridge == nil || !bridge.IsConnected() {
 		return
 	}
-	resp, err := bridge.Forward("installSdk", params)
+	resp, err := bridge.Forward("installSdk", pending.forwardParams())
 	if err != nil {
 		log.Printf("[kvm] installSdk forward failed: %v", err)
 		return
 	}
+	b.mu.Lock()
+	if b.pendingSdkInstall == pending {
+		b.pendingSdkInstall = nil
+	}
+	b.mu.Unlock()
 	log.Printf("[kvm] installSdk ack from guest: resp=%s", logx.Trunc(string(resp)))
 }
 
@@ -806,6 +831,7 @@ func (b *KvmBackend) watchdogLoop(stop <-chan struct{}) {
 }
 
 func (b *KvmBackend) emit(event interface{}) {
+	b.noteProcessEvent(event)
 	b.subMu.RLock()
 	subs := make([]func(event interface{}), 0, len(b.subscribers))
 	for _, s := range b.subscribers {
@@ -814,6 +840,47 @@ func (b *KvmBackend) emit(event interface{}) {
 	b.subMu.RUnlock()
 	for _, cb := range subs {
 		go cb(event)
+	}
+}
+
+func (b *KvmBackend) noteProcessEvent(event interface{}) {
+	processID, exited := exitedProcessID(event)
+	if !exited || processID == "" {
+		return
+	}
+	b.procMu.Lock()
+	delete(b.processes, processID)
+	b.procMu.Unlock()
+}
+
+func exitedProcessID(event interface{}) (string, bool) {
+	switch ev := event.(type) {
+	case process.ExitEvent:
+		return ev.ProcessID, true
+	case *process.ExitEvent:
+		if ev == nil {
+			return "", false
+		}
+		return ev.ProcessID, true
+	case map[string]interface{}:
+		typ, _ := ev["type"].(string)
+		if typ != "exit" {
+			return "", false
+		}
+		return eventProcessID(ev["id"]), true
+	default:
+		return "", false
+	}
+}
+
+func eventProcessID(raw interface{}) string {
+	switch id := raw.(type) {
+	case string:
+		return id
+	case float64:
+		return strconv.FormatFloat(id, 'f', -1, 64)
+	default:
+		return ""
 	}
 }
 

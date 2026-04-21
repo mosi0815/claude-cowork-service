@@ -98,6 +98,10 @@ func (h *vfsHelper) run() int {
 		h.log("mkdir sharedRoot: %v", err)
 		return 1
 	}
+	if err := os.Remove(h.socketPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		h.log("remove stale socket %s: %v", h.socketPath, err)
+		return 1
+	}
 
 	// We run inside `unshare --map-root-user`, which only maps the caller's
 	// host UID/GID into the namespace as 0. Any guest-side chown / mkdir
@@ -143,20 +147,31 @@ func (h *vfsHelper) run() int {
 		close(exitCh)
 	}()
 
-	// Wait up to 10s for the socket to appear, then emit ready.
+	// Wait up to 10s for virtiofsd to publish a live AF_UNIX listener, then
+	// emit ready. A stale pathname from a previous crash is not enough.
 	go func() {
 		start := time.Now()
-		for time.Since(start) < 10*time.Second {
-			if _, err := os.Stat(h.socketPath); err == nil {
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+		timeout := time.NewTimer(10 * time.Second)
+		defer timeout.Stop()
+		for {
+			if unixSocketListed(h.socketPath) {
 				h.log("socket ready after %dms", time.Since(start).Milliseconds())
 				h.emit(map[string]interface{}{"event": "ready"})
 				return
 			}
-			time.Sleep(100 * time.Millisecond)
-		}
-		h.log("socket never appeared")
-		if err := h.virtiofsd.Process.Signal(syscall.SIGTERM); err != nil {
-			h.log("SIGTERM virtiofsd: %v", err)
+			select {
+			case <-ticker.C:
+			case <-timeout.C:
+				h.log("socket never became ready")
+				if err := h.virtiofsd.Process.Signal(syscall.SIGTERM); err != nil {
+					h.log("SIGTERM virtiofsd: %v", err)
+				}
+				return
+			case <-exitCh:
+				return
+			}
 		}
 	}()
 
@@ -383,6 +398,26 @@ func exitDetails(err error) (interface{}, interface{}) {
 		return ee.ExitCode(), nil
 	}
 	return nil, nil
+}
+
+func unixSocketListed(socketPath string) bool {
+	f, err := os.Open("/proc/net/unix")
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+
+	sc := bufio.NewScanner(f)
+	for sc.Scan() {
+		fields := strings.Fields(sc.Text())
+		if len(fields) < 8 {
+			continue
+		}
+		if fields[len(fields)-1] == socketPath {
+			return true
+		}
+	}
+	return false
 }
 
 func trimLine(b []byte) []byte {
