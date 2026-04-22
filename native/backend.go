@@ -136,17 +136,6 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		log.Printf("[native] spawn: %s %v (cwd=%s, mounts=%v)", cmd, args, cwd, mounts)
 	}
 
-	// Log dispatch-critical env vars and tool args for debugging
-	log.Printf("[native] DISPATCH-DEBUG: CLAUDE_CODE_BRIEF=%q", env["CLAUDE_CODE_BRIEF"])
-	for i, a := range args {
-		if a == "--tools" && i+1 < len(args) {
-			log.Printf("[native] DISPATCH-DEBUG: --tools=%s", args[i+1])
-		}
-		if a == "--allowedTools" && i+1 < len(args) {
-			log.Printf("[native] DISPATCH-DEBUG: --allowedTools=%s", args[i+1])
-		}
-	}
-
 	// The client sends VM paths like /sessions/<name>/mnt/<mount>.
 	// We create these under ~/.local/share/claude-cowork/sessions/ and
 	// symlink /sessions/<name> → there so the absolute paths work.

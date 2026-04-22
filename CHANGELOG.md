@@ -17,6 +17,7 @@ All notable changes to claude-cowork-service will be documented in this file.
 - **Updated reference docs** — `COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md` updated to v1.3883.0
 
 ### Fixed
+- **Reverse mount path remapping applied unconditionally** — `streamOutput()` applied `reverseMountRemap` (real host paths → VM `/sessions/` paths) even when `reverseMap=false` (native Linux without root). This caused bash command output (e.g., `wc -l` filenames) to contain `/sessions/<name>/mnt/...` paths that don't exist on disk, breaking subsequent model tool calls. Now both mount-level and session-level reverse mapping are gated behind the `reverseMap` flag.
 - **`readFile` RPC parameter mismatch** — Desktop sends `{processName, filePath}` and expects `{content}` in response. Our handler was parsing `{name, path}` and returning `{data}`. Fixed JSON tags and response field name. (Pre-existing bug, not introduced by v1.3883.0)
 - **`mountPath` RPC parameter mismatch** — Desktop sends `{processId, subpath, mountName, mode}`. Our handler was parsing `{name, hostPath, guestPath}`. Fixed JSON tags and updated VMBackend interface. (Pre-existing bug, not introduced by v1.3883.0; mountPath is a no-op in native mode so this had no functional impact)
 
