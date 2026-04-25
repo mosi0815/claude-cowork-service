@@ -4,6 +4,26 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+### Changed
+- **Upstream update to Claude Desktop v1.4758.0** (from v1.3883.0)
+- **cowork-svc.exe**: Rebuild, same size (12,655,440 bytes), same Go version (go1.24.13). New SHA256 `4ccc771f26fd2db82b072f6cf4c61af2802a737940bf5d4436b9a7d28cd9cbc8`. New internal features: client binary signature verification (WinVerifyTrust), VHDX sparse disk creation, persistent bidirectional RPC, plugin permission gating, conda/session disk support, idle session cleanup, log file ACL hardening. New source files: `variant.go`, `signature.go`, `vhdx.go`, `logfile_security.go`.
+- **VM bundle**: Unchanged — same SHA (`5680b11b...`), same file checksums (stable since v1.1.9669)
+- **app.asar**: Updated. SDK 0.2.111 → 0.2.119, Electron 41.2.0 → 41.3.0, TypeScript ~5.8.3 → ~6.0.2. New workspace packages (`@ant/disclaimer`, `@ant/dxt-registry`, `@ant/utils`). New toolchain (oxlint/oxfmt). New `computerUseTeach.js` build artifact.
+- **`configure` RPC now sends `userDataName` and `sessionOnly` fields** — Desktop sends a fire-and-forget `configure({userDataName: "Claude", sessionOnly: true})` on pipe connect since v1.4758.0. Go struct updated to accept these fields.
+- **`subscribeEvents` RPC now sends `userDataName` field** — Go struct updated to accept this field.
+- **New Desktop-side environment variables** (pass-through, no handler changes): `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `CLAUDE_CODE_CLASSIFIER_SUMMARY`, `CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT`, `CLAUDE_CODE_ENABLE_TASKS`, `CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS`, `CLAUDE_CODE_RATE_LIMIT_TIER`, `CLAUDE_CODE_SUBSCRIPTION_TYPE`, `CLAUDE_COWORK_MEMORY_GUIDELINES`, `CLAUDE_FORCE_HOST_LOOP`
+- **Removed env vars**: `CLAUDE_CODE_PROXY_RESOLVES_HOSTS`, `CLAUDE_INTERNAL_FC_OVERRIDES`, `CLAUDE_RPC_TOKEN`
+- **New Desktop-side features** (no pipe protocol impact): `askClaude` CoworkArtifact bridge (replaces `sample`), `openExternalUrl` artifact method, SSH transport backend, config management API (`createConfig`/`readConfig`/`writeConfig`/`deleteConfig`), git worktree operations, `setFastMode`, `setDeploymentMode`, session adoption/classification, space summarization, `parkAndCapture` artifacts, `probeEgressHosts`/`probeBootstrapUrl` connectivity probing
+- **IPC UUID changed** (no protocol impact)
+- **Feature gate count**: 43 → 58 (15 new gates)
+- **No new RPC methods** — all 22 methods, 8 event types, spawn parameters, and wire format are identical
+- **Updated reference docs** — `COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md` updated to v1.4758.0
+
+### Added
+- **`userDataName` field in `configureParams` struct** (`pipe/handlers.go`) — accepts the new parameter from Desktop v1.4758.0
+- **`sessionOnly` field in `configureParams` struct** (`pipe/handlers.go`) — accepts fire-and-forget on-connect configure calls
+- **`userDataName` field in `vmNameParams` struct** (`pipe/handlers.go`) — accepts the new parameter in subscribeEvents
+
 ## 1.0.50 — 2026-04-22
 
 ### Changed

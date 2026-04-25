@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference — v1.3883.0
+# Cowork RPC Protocol Reference — v1.4758.0
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -8,7 +8,7 @@
 ## Table of Contents
 
 - [Wire Protocol](#wire-protocol)
-- [RPC Methods (21 total)](#rpc-methods-21-total)
+- [RPC Methods (22 total)](#rpc-methods-22-total)
 - [Event Types (9 total)](#event-types-9-total)
 - [Protocol Discoveries](#protocol-discoveries)
 - [Linux-Specific Adaptations](#linux-specific-adaptations)
@@ -77,15 +77,21 @@ Accepts VM resource configuration. On native Linux, values are logged but ignore
 ```json
 {
   "memoryMB": int,
-  "cpuCount": int
+  "cpuCount": int,
+  "userDataName": string,
+  "sessionOnly": boolean
 }
 ```
+
+**New optional fields (v1.4758.0):**
+- `userDataName` (string, optional): The Electron user data directory name (e.g., `"Claude"`). Sent by Desktop since v1.4758.0.
+- `sessionOnly` (boolean, optional): When `true`, indicates this is a fire-and-forget on-connect initialization call (no VM configuration needed). Desktop sends `configure({userDataName: "Claude", sessionOnly: true})` immediately on pipe connect since v1.4758.0. See Discovery #13.
 
 **Response:** `null`
 
 **Native Linux behavior:** Stores the values internally but takes no action. Logged in debug mode.
 
-**Notes:** Called early in session setup, before `createVM`.
+**Notes:** Called early in session setup, before `createVM`. Since v1.4758.0, also called immediately upon pipe connect as a fire-and-forget initialization (with `sessionOnly: true`).
 
 ---
 
@@ -241,6 +247,24 @@ Spawns a command as a child process. This is the most complex method in the prot
 - `.cowork-perm-resp` (mode `"ro"`): Permission bridge response directory. Host writes `"allow"` or `"deny"` responses here after user interaction.
 
 These mounts are only present when plugins are configured for the session. On native Linux, they are processed by the existing mount symlink handler.
+
+**New spawn `env` variables (v1.4758.0):**
+- `CLAUDE_CODE_AUTO_COMPACT_WINDOW` — auto-compaction window configuration
+- `CLAUDE_CODE_CLASSIFIER_SUMMARY` — classifier summary configuration
+- `CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT` — always `"1"`, enables subagent prompt appending
+- `CLAUDE_CODE_ENABLE_TASKS` — gated feature flag for tasks support
+- `CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS` — OpenTelemetry headers helper debounce in milliseconds
+- `CLAUDE_CODE_RATE_LIMIT_TIER` — rate limit tier for the session
+- `CLAUDE_CODE_SUBSCRIPTION_TYPE` — user subscription type
+- `CLAUDE_COWORK_MEMORY_GUIDELINES` — memory guidelines for cowork sessions
+- `CLAUDE_FORCE_HOST_LOOP` — forces host loop behavior
+
+**Removed spawn `env` variables (v1.4758.0):**
+- `CLAUDE_CODE_PROXY_RESOLVES_HOSTS` — removed
+- `CLAUDE_INTERNAL_FC_OVERRIDES` — removed
+- `CLAUDE_RPC_TOKEN` — removed
+
+All spawn `env` variables are passed through transparently to the spawned process on native Linux.
 
 **Response:**
 ```json
@@ -476,9 +500,13 @@ Subscribes to the event stream for a VM/session. This is a long-lived connection
 **Params:**
 ```json
 {
-  "name": string
+  "name": string,
+  "userDataName": string
 }
 ```
+
+**New optional fields (v1.4758.0):**
+- `userDataName` (string, optional): The Electron user data directory name (e.g., `"Claude"`). Sent by Desktop since v1.4758.0.
 
 **Response (initial acknowledgment):**
 ```json
@@ -752,7 +780,7 @@ Reports network connectivity state. Desktop uses this to detect when the VM has 
 
 ## Protocol Discoveries
 
-During reverse engineering, 12 mismatches were found between the documented/expected protocol and what Claude Desktop actually sends. These are critical for anyone building a compatible implementation.
+During reverse engineering, 13 mismatches and behavioral changes were found between the documented/expected protocol and what Claude Desktop actually sends. These are critical for anyone building a compatible implementation.
 
 ### Discovery #1: Spawn field is `"command"` not `"cmd"`
 
@@ -817,6 +845,11 @@ During reverse engineering, 12 mismatches were found between the documented/expe
 - **Symptom:** Events ignored by Desktop, UI stuck on "Starting up...".
 - **Fix:** Changed event struct JSON tags from `"processId"` to `"id"`.
 - **Source reference:** All event structs in `process/events.go` use `` `json:"id"` ``.
+
+### Discovery #13: On-connect `configure` call (v1.4758.0)
+
+- **Behavior:** Since v1.4758.0, Desktop sends a fire-and-forget `configure({userDataName: "Claude", sessionOnly: true})` immediately upon connecting to the pipe. This precedes any other RPC calls on that connection.
+- **Impact:** The daemon must accept `configure` calls with the new `userDataName` and `sessionOnly` fields without error. Since `configure` already returns `null`, no handler changes are needed — unknown fields in the params are silently ignored by Go's JSON unmarshaller.
 
 ---
 
@@ -939,6 +972,8 @@ These methods exist in cowork-svc.exe (from binary string analysis) but are not 
 
 **v1.3109.0:** No new RPC methods. Protocol remains at 22 methods and 8 event types. cowork-svc.exe is a **clean rebuild with byte-identical size** (12,648,272 bytes) — only build metadata differs (new VCS revision `35cbf6530e05912137624cde0f075dc7f121fa60`, timestamp `2026-04-16T20:32:01Z`). No new handler functions or error strings. app.asar grew substantially (10.1 → 14.6 MB) but is entirely minifier symbol renames; all 22 of our RPC method names are still called by Desktop, and all session dispatch machinery (`CLAUDE_CODE_TAGS:\`lam_session_type:${sessionType}\``, `CLAUDE_CODE_BRIEF`, `disallowedTools`, `present_files`, `session_type:"cowork"`) is unchanged. VM bundle unchanged (same SHA `5680b11b...`, same checksums). SDK versions unchanged. **No Go code changes required.**
 
+**v1.4758.0:** No new RPC methods. Protocol remains at 22 methods and 9 event types. Two parameter additions: `configure` gains optional `userDataName` (string) and `sessionOnly` (boolean); `subscribeEvents` gains optional `userDataName` (string). New on-connect behavior: Desktop now sends a fire-and-forget `configure({userDataName: "Claude", sessionOnly: true})` immediately upon pipe connect, before any other RPC calls (see Discovery #13). New spawn env vars: `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `CLAUDE_CODE_CLASSIFIER_SUMMARY`, `CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT`, `CLAUDE_CODE_ENABLE_TASKS`, `CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS`, `CLAUDE_CODE_RATE_LIMIT_TIER`, `CLAUDE_CODE_SUBSCRIPTION_TYPE`, `CLAUDE_COWORK_MEMORY_GUIDELINES`, `CLAUDE_FORCE_HOST_LOOP`. Removed spawn env vars: `CLAUDE_CODE_PROXY_RESOLVES_HOSTS`, `CLAUDE_INTERNAL_FC_OVERRIDES`, `CLAUDE_RPC_TOKEN`. Wire protocol otherwise unchanged.
+
 ---
 
 ## Session Lifecycle Sequence
@@ -947,6 +982,9 @@ A typical Cowork session follows this sequence:
 
 ```
 Desktop                          cowork-svc
+   │                                  │
+   ├── configure(userDataName,    ──►│  (fire-and-forget, v1.4758.0+)
+   │     sessionOnly:true)            │
    │                                  │
    ├── stopVM(name) ────────────────►│  (cleanup from previous session)
    │                                  │
