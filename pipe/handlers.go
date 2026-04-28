@@ -91,12 +91,15 @@ func (h *Handler) Handle(conn net.Conn, payload []byte) {
 // Parameter types for RPC methods
 
 type configureParams struct {
-	MemoryMB int `json:"memoryMB"`
-	CPUCount int `json:"cpuCount"`
+	MemoryMB     int    `json:"memoryMB"`
+	CPUCount     int    `json:"cpuCount"`
+	UserDataName string `json:"userDataName"`
+	SessionOnly  bool   `json:"sessionOnly"`
 }
 
 type vmNameParams struct {
-	Name string `json:"name"`
+	Name         string `json:"name"`
+	UserDataName string `json:"userDataName"`
 }
 
 type createVMParams struct {
