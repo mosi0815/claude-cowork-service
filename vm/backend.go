@@ -137,7 +137,7 @@ func (b *KvmBackend) CreateVM(name string) error {
 
 // StartVM boots the VM: prepare bundle, create session dir, launch virtiofsd
 // via helper, spawn QEMU, open QMP, wait for guest bridge connection.
-func (b *KvmBackend) StartVM(name string, bundlePath string) error {
+func (b *KvmBackend) StartVM(name string, bundlePath string, memoryGb int) error {
 	var stale vmRuntimeState
 	hadStale := false
 
@@ -241,10 +241,14 @@ func (b *KvmBackend) StartVM(name string, bundlePath string) error {
 	cid := b.allocateCID()
 	monitorSock := filepath.Join(sessionDir, "qmp.sock")
 
-	memoryGB := (b.memoryMB + 1023) / 1024
-	if memoryGB < 1 {
-		memoryGB = 1
+	memGb := (b.memoryMB + 1023) / 1024
+	if memoryGb > 0 {
+		memGb = memoryGb
 	}
+	if memGb < 1 {
+		memGb = 1
+	}
+	log.Printf("[kvm] starting VM %s with %dGB memory", name, memGb)
 
 	b.emit(map[string]interface{}{
 		"type": "startupStep", "step": "start_vm", "status": "running",
@@ -261,7 +265,7 @@ func (b *KvmBackend) StartVM(name string, bundlePath string) error {
 		monitorSock:  monitorSock,
 		virtiofsSock: virtiofsSock,
 		cid:          cid,
-		memoryGB:     memoryGB,
+		memoryGB:     memGb,
 		cpus:         b.cpus,
 	}
 	qemu, err := startQEMU(spec, b.debug)

@@ -214,6 +214,18 @@ var forwardedEvents = map[string]bool{
 	"ready": true, "startupStep": true,
 }
 
+// renameExitCode aligns the guest's exit event with the native-backend shape:
+// guest emits {"code": N}, but clients (and process.ExitEvent) expect "exitCode".
+func renameExitCode(eventType string, m map[string]interface{}) {
+	if eventType != "exit" {
+		return
+	}
+	if code, ok := m["code"]; ok {
+		m["exitCode"] = code
+		delete(m, "code")
+	}
+}
+
 func (g *GuestBridge) readLoop(conn *vsockConn) {
 	for {
 		msg, err := readFramed(conn)
@@ -223,6 +235,7 @@ func (g *GuestBridge) readLoop(conn *vsockConn) {
 			}
 			return
 		}
+		log.Printf("[kvm] guest read: %s", logx.Trunc(string(msg)))
 		g.handleMessage(msg)
 	}
 }
@@ -243,13 +256,14 @@ func (g *GuestBridge) handleMessage(raw []byte) {
 	typ := jsonString(msg["type"])
 
 	if forwardedEvents[typ] {
-		var out interface{}
+		var out map[string]interface{}
 		if err := json.Unmarshal(raw, &out); err != nil {
 			if g.debug {
 				log.Printf("[kvm] forward %s: re-unmarshal: %v", typ, err)
 			}
 			return
 		}
+		renameExitCode(typ, out)
 		g.emit(out)
 		return
 	}
@@ -268,6 +282,7 @@ func (g *GuestBridge) handleMessage(raw []byte) {
 				params = map[string]interface{}{}
 			}
 			params["type"] = ev
+			renameExitCode(ev, params)
 			g.emit(params)
 			return
 		}

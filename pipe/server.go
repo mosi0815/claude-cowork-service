@@ -30,7 +30,7 @@ type DeleteSessionDirsResult struct {
 type VMBackend interface {
 	Configure(memoryMB int, cpuCount int) error
 	CreateVM(name string) error
-	StartVM(name string, bundlePath string) error
+	StartVM(name string, bundlePath string, memoryGB int) error
 	StopVM(name string) error
 	IsRunning(name string) (bool, error)
 	IsGuestConnected(name string) (bool, error)
