@@ -15,7 +15,7 @@ type recordingBackend struct {
 
 func (b *recordingBackend) Configure(memoryMB int, cpuCount int) error { return nil }
 func (b *recordingBackend) CreateVM(name string) error                 { return nil }
-func (b *recordingBackend) StartVM(name string, bundlePath string) error {
+func (b *recordingBackend) StartVM(name string, bundlePath string, memoryGB int) error {
 	b.startName = name
 	b.startBundlePath = bundlePath
 	return nil

@@ -412,10 +412,7 @@ func (b *KvmBackend) Spawn(name string, id string, cmd string, args []string, en
 			}
 			if err := helper.Bind(mount.Path, mode); err != nil {
 				log.Printf("[kvm] spawn bind failed for %s=%s (%s): %v", mountName, mount.Path, mode, err)
-				b.emit(process.NewStderrEvent(id,
-					fmt.Sprintf("Error: vfs bind for %s failed: %v\n", mountName, err)))
-				b.emit(process.NewExitEvent(id, 1))
-				return id, nil
+				return "", fmt.Errorf("vfs bind for %s failed: %w", mountName, err)
 			}
 		}
 	}
