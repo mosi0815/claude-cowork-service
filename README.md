@@ -11,14 +11,14 @@ Native Linux backend for Claude Desktop's **Cowork** feature. Reverse-engineered
 
 ## What This Is
 
-Claude Desktop has a Cowork feature that lets you delegate tasks to a sandboxed Claude Code instance. On macOS it uses Apple's Virtualization framework (Swift), on Windows it uses Hyper-V (Go). On Linux — there's no official support.
+Claude Desktop has a Cowork feature that lets you delegate tasks to a sandboxed Claude Code instance. On macOS it uses Apple's Virtualization framework (Swift), on Windows it uses Hyper-V (Go). On Linux - there's no official support.
 
 This daemon fills that gap. It implements the same length-prefixed JSON-over-Unix-socket protocol that Claude Desktop expects and offers two backends:
 
-- **Native** (default) — runs commands directly on the host, no VM overhead.
-- **KVM** (experimental) — runs sessions inside a QEMU/KVM virtual machine, matching the sandboxed execution model of macOS and Windows.
+- **Native** (default) - runs commands directly on the host, no VM overhead.
+- **KVM** (experimental) - runs sessions inside a QEMU/KVM virtual machine, matching the sandboxed execution model of macOS and Windows.
 
-**Key insight:** The VM on macOS/Windows runs Linux anyway. In native mode we skip the VM entirely — because we're already the target OS. In KVM mode we boot the same Anthropic-provided guest image for full parity.
+**Key insight:** The VM on macOS/Windows runs Linux anyway. In native mode we skip the VM entirely - because we're already the target OS. In KVM mode we boot the same Anthropic-provided guest image for full parity.
 
 ## Installation
 
