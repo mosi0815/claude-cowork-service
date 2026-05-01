@@ -4,6 +4,8 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+## 1.0.52 — 2026-05-01
+
 ### Added
 - **KVM backend** (`-backend=kvm`) — new QEMU/KVM-based guest runtime that replaces the old dormant VM implementation. Selectable via the `-backend` flag or the `COWORK_VM_BACKEND` environment variable. Listens on a dedicated socket (`cowork-kvm-service.sock`) so native and KVM daemons can coexist in the same `$XDG_RUNTIME_DIR`. Native remains the default. Contributed by [@mosi0815](https://github.com/mosi0815) ([#26](https://github.com/patrickjaja/claude-cowork-service/pull/26)).
   - `vm/backend.go` — session lifecycle, bundle preparation, memory/CPU configuration, process management
