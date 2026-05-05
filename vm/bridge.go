@@ -69,10 +69,15 @@ type GuestBridge struct {
 	closed    atomic.Bool
 
 	pendMu  sync.Mutex
-	pending map[string]chan json.RawMessage
+	pending map[string]chan guestReply
 	nextID  uint64
 
 	onConnect func() // called once when guest connects
+}
+
+type guestReply struct {
+	result json.RawMessage
+	err    error
 }
 
 // NewGuestBridge creates a bridge listening on the given vsock port.
@@ -82,7 +87,7 @@ func NewGuestBridge(port uint32, debug bool, emit func(event interface{})) *Gues
 		debug:    debug,
 		emit:     emit,
 		listenFD: -1,
-		pending:  make(map[string]chan json.RawMessage),
+		pending:  make(map[string]chan guestReply),
 	}
 }
 
@@ -209,6 +214,18 @@ var forwardedEvents = map[string]bool{
 	"ready": true, "startupStep": true,
 }
 
+// renameExitCode aligns the guest's exit event with the native-backend shape:
+// guest emits {"code": N}, but clients (and process.ExitEvent) expect "exitCode".
+func renameExitCode(eventType string, m map[string]interface{}) {
+	if eventType != "exit" {
+		return
+	}
+	if code, ok := m["code"]; ok {
+		m["exitCode"] = code
+		delete(m, "code")
+	}
+}
+
 func (g *GuestBridge) readLoop(conn *vsockConn) {
 	for {
 		msg, err := readFramed(conn)
@@ -218,6 +235,7 @@ func (g *GuestBridge) readLoop(conn *vsockConn) {
 			}
 			return
 		}
+		log.Printf("[kvm] guest read: %s", logx.Trunc(string(msg)))
 		g.handleMessage(msg)
 	}
 }
@@ -238,13 +256,14 @@ func (g *GuestBridge) handleMessage(raw []byte) {
 	typ := jsonString(msg["type"])
 
 	if forwardedEvents[typ] {
-		var out interface{}
+		var out map[string]interface{}
 		if err := json.Unmarshal(raw, &out); err != nil {
 			if g.debug {
 				log.Printf("[kvm] forward %s: re-unmarshal: %v", typ, err)
 			}
 			return
 		}
+		renameExitCode(typ, out)
 		g.emit(out)
 		return
 	}
@@ -263,6 +282,7 @@ func (g *GuestBridge) handleMessage(raw []byte) {
 				params = map[string]interface{}{}
 			}
 			params["type"] = ev
+			renameExitCode(ev, params)
 			g.emit(params)
 			return
 		}
@@ -279,11 +299,18 @@ func (g *GuestBridge) handleMessage(raw []byte) {
 			}
 			g.pendMu.Unlock()
 			if found {
-				if result, ok := msg["result"]; ok {
-					ch <- result
-				} else {
-					ch <- raw
+				reply := guestReply{}
+				if rawErr, ok := msg["error"]; ok {
+					reply.err = guestResponseError(rawErr)
 				}
+				if reply.err == nil {
+					if result, ok := msg["result"]; ok {
+						reply.result = result
+					} else {
+						reply.result = raw
+					}
+				}
+				ch <- reply
 				close(ch)
 				return
 			}
@@ -296,7 +323,8 @@ func (g *GuestBridge) handleMessage(raw []byte) {
 }
 
 // Forward sends a request to the guest and waits up to 30s for a reply.
-// The reply's "result" payload (or whole response if absent) is returned raw.
+// Guest-side errors are returned as Go errors; successful replies return the
+// "result" payload (or whole response if absent) raw.
 func (g *GuestBridge) Forward(method string, params interface{}) (json.RawMessage, error) {
 	g.connMu.RLock()
 	conn := g.conn
@@ -306,7 +334,7 @@ func (g *GuestBridge) Forward(method string, params interface{}) (json.RawMessag
 	}
 
 	id := strconv.FormatUint(atomic.AddUint64(&g.nextID, 1), 10)
-	ch := make(chan json.RawMessage, 1)
+	ch := make(chan guestReply, 1)
 	g.pendMu.Lock()
 	g.pending[id] = ch
 	g.pendMu.Unlock()
@@ -329,7 +357,10 @@ func (g *GuestBridge) Forward(method string, params interface{}) (json.RawMessag
 		if !ok {
 			return nil, fmt.Errorf("guest disconnected while waiting for %s", method)
 		}
-		return resp, nil
+		if resp.err != nil {
+			return nil, fmt.Errorf("guest %s failed: %w", method, resp.err)
+		}
+		return resp.result, nil
 	case <-time.After(30 * time.Second):
 		g.pendMu.Lock()
 		delete(g.pending, id)
@@ -408,4 +439,18 @@ func normalizeID(raw json.RawMessage) string {
 		return strconv.FormatFloat(n, 'f', -1, 64)
 	}
 	return string(raw)
+}
+
+func guestResponseError(raw json.RawMessage) error {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var s string
+	if json.Unmarshal(raw, &s) == nil {
+		if s == "" {
+			return fmt.Errorf("guest error")
+		}
+		return fmt.Errorf("%s", s)
+	}
+	return fmt.Errorf("guest error: %s", string(raw))
 }

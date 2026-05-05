@@ -8,9 +8,11 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/patrickjaja/claude-cowork-service/logx"
@@ -30,6 +32,7 @@ type KvmBackend struct {
 	memoryMB    int
 	cpus        int
 	started     bool
+	starting    bool // pipeline in flight; prevents concurrent StartVM double-launch
 	sessionDir  string
 	sessionName string
 	bundleDir   string
@@ -40,7 +43,7 @@ type KvmBackend struct {
 	bridge *GuestBridge
 
 	// Pending state for methods called before the VM is fully up.
-	pendingSdkInstall map[string]interface{}
+	pendingSdkInstall *pendingSdkInstall
 	pendingSdkBind    *pendingBind
 
 	// Process bookkeeping — existence only; stdout/stderr/exit flow via events.
@@ -50,13 +53,40 @@ type KvmBackend struct {
 	lastActivity atomic.Int64 // unix nanos — updated by Touch()
 	watchdogStop chan struct{}
 
-	subscribers []func(event interface{})
+	subscribers map[uint64]func(event interface{})
+	nextSubID   uint64
 	subMu       sync.RWMutex
 }
 
 type pendingBind struct {
 	subpath string
 	mode    string
+}
+
+type pendingSdkInstall struct {
+	sdkSubpath string
+	version    string
+}
+
+type vmRuntimeState struct {
+	qemu         *qemuInstance
+	qmp          *QmpClient
+	helper       *VfsHelper
+	bridge       *GuestBridge
+	sessionDir   string
+	sessionName  string
+	bundleDir    string
+	watchdogStop chan struct{}
+}
+
+func (p *pendingSdkInstall) forwardParams() map[string]interface{} {
+	if p == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"sdkSubpath": p.sdkSubpath,
+		"version":    p.version,
+	}
 }
 
 // keepaliveTimeout is how long the VM may run without any RPC activity from
@@ -73,12 +103,13 @@ func NewKvmBackend(bundlesDir string, debug bool) *KvmBackend {
 		log.Printf("[kvm] MkdirAll %s: %v", baseDir, err)
 	}
 	return &KvmBackend{
-		baseDir:    baseDir,
-		bundlesDir: bundlesDir,
-		debug:      debug,
-		memoryMB:   4096,
-		cpus:       4,
-		processes:  make(map[string]struct{}),
+		baseDir:     baseDir,
+		bundlesDir:  bundlesDir,
+		debug:       debug,
+		memoryMB:    4096,
+		cpus:        4,
+		processes:   make(map[string]struct{}),
+		subscribers: make(map[uint64]func(event interface{})),
 	}
 }
 
@@ -106,14 +137,35 @@ func (b *KvmBackend) CreateVM(name string) error {
 
 // StartVM boots the VM: prepare bundle, create session dir, launch virtiofsd
 // via helper, spawn QEMU, open QMP, wait for guest bridge connection.
-func (b *KvmBackend) StartVM(name string) error {
+func (b *KvmBackend) StartVM(name string, bundlePath string, memoryGb int) error {
+	var stale vmRuntimeState
+	hadStale := false
+
 	b.mu.Lock()
 	if b.started {
+		stale, hadStale = b.takeExitedVMStateLocked()
+		if !hadStale {
+			b.mu.Unlock()
+			log.Printf("[kvm] startVM: already running")
+			return nil
+		}
+	}
+	if b.starting {
 		b.mu.Unlock()
-		log.Printf("[kvm] startVM: already running")
+		log.Printf("[kvm] startVM: another start already in progress — ignoring concurrent call")
 		return nil
 	}
+	b.starting = true
 	b.mu.Unlock()
+	defer func() {
+		b.mu.Lock()
+		b.starting = false
+		b.mu.Unlock()
+	}()
+
+	if hadStale {
+		b.cleanupVMRuntime(stale, stale.sessionName, "[kvm] startVM: detected stale runtime after unexpected QEMU exit; cleaning up before restart")
+	}
 
 	check := CheckKvmPrerequisites()
 	if !check.OK {
@@ -128,15 +180,9 @@ func (b *KvmBackend) StartVM(name string) error {
 		"type": "startupStep", "step": "prepare_session", "status": "running",
 	})
 
-	bundleDir, err := b.findBundle()
+	bundleDir, err := b.findBundle(bundlePath)
 	if err != nil {
 		return fmt.Errorf("no VM bundle available: %w", err)
-	}
-	// Decompress any .zst-wrapped bundle files (rootfs, vmlinuz, initrd)
-	// before attempting to convert or boot.
-	bm := NewBundleManager(b.baseDir, b.debug)
-	if err := bm.DecompressBundle(bundleDir); err != nil {
-		return fmt.Errorf("decompressing bundle: %w", err)
 	}
 	rootQcow2, err := ensureVHDXConverted(bundleDir, "rootfs")
 	if err != nil {
@@ -195,10 +241,14 @@ func (b *KvmBackend) StartVM(name string) error {
 	cid := b.allocateCID()
 	monitorSock := filepath.Join(sessionDir, "qmp.sock")
 
-	memoryGB := (b.memoryMB + 1023) / 1024
-	if memoryGB < 1 {
-		memoryGB = 1
+	memGb := (b.memoryMB + 1023) / 1024
+	if memoryGb > 0 {
+		memGb = memoryGb
 	}
+	if memGb < 1 {
+		memGb = 1
+	}
+	log.Printf("[kvm] starting VM %s with %dGB memory", name, memGb)
 
 	b.emit(map[string]interface{}{
 		"type": "startupStep", "step": "start_vm", "status": "running",
@@ -215,7 +265,7 @@ func (b *KvmBackend) StartVM(name string) error {
 		monitorSock:  monitorSock,
 		virtiofsSock: virtiofsSock,
 		cid:          cid,
-		memoryGB:     memoryGB,
+		memoryGB:     memGb,
 		cpus:         b.cpus,
 	}
 	qemu, err := startQEMU(spec, b.debug)
@@ -240,6 +290,11 @@ func (b *KvmBackend) StartVM(name string) error {
 	if err := bridge.Listen(func() { close(guestReady) }); err != nil {
 		log.Printf("[kvm] bridge.Listen failed: %v — tearing down VM", err)
 		qemu.Shutdown(qmp)
+		if qmp != nil {
+			if cerr := qmp.Close(); cerr != nil && b.debug {
+				log.Printf("[kvm] qmp close (bridge-listen teardown): %v", cerr)
+			}
+		}
 		helper.Stop()
 		return fmt.Errorf("bridge listen: %w", err)
 	}
@@ -255,11 +310,7 @@ func (b *KvmBackend) StartVM(name string) error {
 	b.helper = helper
 	b.bridge = bridge
 	b.watchdogStop = make(chan struct{})
-	b.lastActivity.Store(time.Now().UnixNano())
-	watchdogStop := b.watchdogStop
 	b.mu.Unlock()
-
-	go b.watchdogLoop(watchdogStop)
 
 	// Wait up to 90s for guest to connect. Return success either way so
 	// Desktop's UI can proceed; actual spawns will fail loud if needed.
@@ -280,6 +331,15 @@ func (b *KvmBackend) StartVM(name string) error {
 		})
 	}
 
+	b.mu.RLock()
+	watchdogStop := b.watchdogStop
+	startWatchdog := b.started && watchdogStop != nil
+	b.mu.RUnlock()
+	if startWatchdog {
+		b.lastActivity.Store(time.Now().UnixNano())
+		go b.watchdogLoop(watchdogStop)
+	}
+
 	b.emit(map[string]interface{}{"type": "vmStarted", "name": name})
 	return nil
 }
@@ -293,62 +353,26 @@ func (b *KvmBackend) StopVM(name string) error {
 		log.Printf("[kvm] stopVM %q: already stopped (no-op)", name)
 		return nil
 	}
-	qemu := b.qemu
-	qmp := b.qmp
-	helper := b.helper
-	bridge := b.bridge
-	sessionDir := b.sessionDir
-	watchdogStop := b.watchdogStop
-	b.started = false
-	b.qemu = nil
-	b.qmp = nil
-	b.helper = nil
-	b.bridge = nil
-	b.sessionDir = ""
-	b.watchdogStop = nil
+	state := b.takeVMRuntimeLocked()
 	b.mu.Unlock()
 
-	if watchdogStop != nil {
-		close(watchdogStop)
-	}
-
 	log.Printf("[kvm] stopVM %s", name)
-
-	if bridge != nil {
-		bridge.Close()
-	}
-	if qemu != nil {
-		qemu.Shutdown(qmp)
-	}
-	if qmp != nil {
-		if err := qmp.Close(); err != nil && b.debug {
-			log.Printf("[kvm] qmp close: %v", err)
-		}
-	}
-	if helper != nil {
-		helper.Stop()
-	}
-	if sessionDir != "" {
-		if err := os.RemoveAll(sessionDir); err != nil {
-			log.Printf("[kvm] session cleanup error: %v", err)
-		}
-	}
-
-	b.procMu.Lock()
-	b.processes = make(map[string]struct{})
-	b.procMu.Unlock()
-
-	b.emit(map[string]interface{}{
-		"type": "networkStatus", "status": "disconnected",
-	})
-	b.emit(map[string]interface{}{"type": "vmStopped", "name": name})
+	b.cleanupVMRuntime(state, name, "")
 	return nil
 }
 
 func (b *KvmBackend) IsRunning(name string) (bool, error) {
-	b.mu.RLock()
+	var stale vmRuntimeState
+	hadStale := false
+
+	b.mu.Lock()
+	stale, hadStale = b.takeExitedVMStateLocked()
 	qemu := b.qemu
-	b.mu.RUnlock()
+	b.mu.Unlock()
+	if hadStale {
+		b.cleanupVMRuntime(stale, stale.sessionName, "[kvm] isRunning: detected stale runtime after unexpected QEMU exit; cleaning up")
+		return false, nil
+	}
 	if qemu == nil {
 		return false, nil
 	}
@@ -388,10 +412,7 @@ func (b *KvmBackend) Spawn(name string, id string, cmd string, args []string, en
 			}
 			if err := helper.Bind(mount.Path, mode); err != nil {
 				log.Printf("[kvm] spawn bind failed for %s=%s (%s): %v", mountName, mount.Path, mode, err)
-				b.emit(process.NewStderrEvent(id,
-					fmt.Sprintf("Error: vfs bind for %s failed: %v\n", mountName, err)))
-				b.emit(process.NewExitEvent(id, 1))
-				return id, nil
+				return "", fmt.Errorf("vfs bind for %s failed: %w", mountName, err)
 			}
 		}
 	}
@@ -552,26 +573,31 @@ func (b *KvmBackend) ReadFile(processName string, filePath string) ([]byte, erro
 	return os.ReadFile(resolved)
 }
 
-func (b *KvmBackend) InstallSdk(name string) error {
-	log.Printf("[kvm] installSdk %s", name)
+// InstallSdk binds the SDK install dir rw into the virtiofs share so the
+// guest can download the binary there, then forwards {sdkSubpath, version}
+// to the guest sdk-daemon. If the helper or the guest isn't up yet, queue
+// the work so it runs before the first spawn.
+func (b *KvmBackend) InstallSdk(sdkSubpath string, version string) error {
+	log.Printf("[kvm] installSdk %s@%s", sdkSubpath, version)
 
-	params := map[string]interface{}{
-		"name": name,
+	pending := &pendingSdkInstall{
+		sdkSubpath: sdkSubpath,
+		version:    version,
 	}
 
 	b.mu.Lock()
 	helper := b.helper
 	bridge := b.bridge
 	helperReady := helper != nil
-	b.pendingSdkInstall = params
-	if name != "" && !helperReady {
-		b.pendingSdkBind = &pendingBind{subpath: name, mode: "rw"}
+	b.pendingSdkInstall = pending
+	if sdkSubpath != "" && !helperReady {
+		b.pendingSdkBind = &pendingBind{subpath: sdkSubpath, mode: "rw"}
 	}
 	b.mu.Unlock()
 
 	// Bind now if the helper is already up; replayed by StartVM otherwise.
-	if name != "" && helperReady {
-		if err := helper.Bind(name, "rw"); err != nil {
+	if sdkSubpath != "" && helperReady {
+		if err := helper.Bind(sdkSubpath, "rw"); err != nil {
 			log.Printf("[kvm] installSdk bind failed: %v", err)
 		}
 	}
@@ -585,19 +611,23 @@ func (b *KvmBackend) InstallSdk(name string) error {
 }
 
 func (b *KvmBackend) runPendingSdkInstall() {
-	b.mu.Lock()
-	params := b.pendingSdkInstall
+	b.mu.RLock()
+	pending := b.pendingSdkInstall
 	bridge := b.bridge
-	b.pendingSdkInstall = nil
-	b.mu.Unlock()
-	if params == nil || bridge == nil || !bridge.IsConnected() {
+	b.mu.RUnlock()
+	if pending == nil || bridge == nil || !bridge.IsConnected() {
 		return
 	}
-	resp, err := bridge.Forward("installSdk", params)
+	resp, err := bridge.Forward("installSdk", pending.forwardParams())
 	if err != nil {
 		log.Printf("[kvm] installSdk forward failed: %v", err)
 		return
 	}
+	b.mu.Lock()
+	if b.pendingSdkInstall == pending {
+		b.pendingSdkInstall = nil
+	}
+	b.mu.Unlock()
 	log.Printf("[kvm] installSdk ack from guest: resp=%s", logx.Trunc(string(resp)))
 }
 
@@ -626,16 +656,15 @@ func (b *KvmBackend) SetDebugLogging(enabled bool) {
 
 func (b *KvmBackend) SubscribeEvents(name string, callback func(event interface{})) (func(), error) {
 	b.subMu.Lock()
-	b.subscribers = append(b.subscribers, callback)
-	idx := len(b.subscribers) - 1
+	b.nextSubID++
+	id := b.nextSubID
+	b.subscribers[id] = callback
 	b.subMu.Unlock()
 
 	cancel := func() {
 		b.subMu.Lock()
-		defer b.subMu.Unlock()
-		if idx < len(b.subscribers) {
-			b.subscribers[idx] = nil
-		}
+		delete(b.subscribers, id)
+		b.subMu.Unlock()
 	}
 	return cancel, nil
 }
@@ -782,12 +811,11 @@ func (b *KvmBackend) watchdogLoop(stop <-chan struct{}) {
 }
 
 func (b *KvmBackend) emit(event interface{}) {
+	b.noteProcessEvent(event)
 	b.subMu.RLock()
 	subs := make([]func(event interface{}), 0, len(b.subscribers))
 	for _, s := range b.subscribers {
-		if s != nil {
-			subs = append(subs, s)
-		}
+		subs = append(subs, s)
 	}
 	b.subMu.RUnlock()
 	for _, cb := range subs {
@@ -795,23 +823,89 @@ func (b *KvmBackend) emit(event interface{}) {
 	}
 }
 
+func (b *KvmBackend) noteProcessEvent(event interface{}) {
+	processID, exited := exitedProcessID(event)
+	if !exited || processID == "" {
+		return
+	}
+	b.procMu.Lock()
+	delete(b.processes, processID)
+	b.procMu.Unlock()
+}
+
+func exitedProcessID(event interface{}) (string, bool) {
+	switch ev := event.(type) {
+	case process.ExitEvent:
+		return ev.ProcessID, true
+	case *process.ExitEvent:
+		if ev == nil {
+			return "", false
+		}
+		return ev.ProcessID, true
+	case map[string]interface{}:
+		typ, _ := ev["type"].(string)
+		if typ != "exit" {
+			return "", false
+		}
+		return eventProcessID(ev["id"]), true
+	default:
+		return "", false
+	}
+}
+
+func eventProcessID(raw interface{}) string {
+	switch id := raw.(type) {
+	case string:
+		return id
+	case float64:
+		return strconv.FormatFloat(id, 'f', -1, 64)
+	default:
+		return ""
+	}
+}
+
 // allocateCID picks an unused vsock CID, persisting the counter between runs.
-// CIDs 0-2 are reserved by the kernel.
+// CIDs 0-2 are reserved by the kernel. The read-modify-write is serialized
+// with flock(LOCK_EX) on the counter file so two concurrent daemons (or two
+// concurrent StartVM calls in the same process) cannot hand out the same CID
+// — the kernel rejects duplicate vhost-vsock guest-cid bindings and the
+// resulting QEMU exit surfaces as a generic "exited immediately" error that
+// points operators at disk/KVM instead of the real cause.
 func (b *KvmBackend) allocateCID() uint32 {
 	cidFile := filepath.Join(b.baseDir, ".next_cid")
-	cid := uint32(3)
-	if data, err := os.ReadFile(cidFile); err == nil {
-		var n uint32
-		if _, err := fmt.Sscanf(string(data), "%d", &n); err == nil && n >= 3 {
-			cid = n
+	const defaultCID = uint32(3)
+
+	f, err := os.OpenFile(cidFile, os.O_RDWR|os.O_CREATE, 0o644)
+	if err != nil {
+		log.Printf("[kvm] open CID counter %s: %v — falling back to CID %d", cidFile, err, defaultCID)
+		return defaultCID
+	}
+	defer func() { _ = f.Close() }()
+
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		log.Printf("[kvm] flock CID counter: %v — falling back to CID %d", err, defaultCID)
+		return defaultCID
+	}
+	// LOCK_UN happens implicitly on Close; no explicit unlock needed.
+
+	cid := defaultCID
+	var buf [32]byte
+	if n, _ := f.ReadAt(buf[:], 0); n > 0 {
+		var parsed uint32
+		if _, err := fmt.Sscanf(string(buf[:n]), "%d", &parsed); err == nil && parsed >= 3 {
+			cid = parsed
 		}
 	}
 	next := cid + 1
 	if next >= 65535 {
 		next = 3
 	}
-	if err := os.WriteFile(cidFile, []byte(fmt.Sprintf("%d", next)), 0o644); err != nil {
-		log.Printf("[kvm] persisting CID counter to %s: %v", cidFile, err)
+	if err := f.Truncate(0); err != nil {
+		log.Printf("[kvm] truncate CID counter: %v", err)
+		return cid
+	}
+	if _, err := f.WriteAt([]byte(fmt.Sprintf("%d", next)), 0); err != nil {
+		log.Printf("[kvm] write CID counter: %v", err)
 	}
 	return cid
 }
@@ -819,16 +913,24 @@ func (b *KvmBackend) allocateCID() uint32 {
 // findBundle returns the first directory under bundlesDir that contains a
 // usable rootfs. Falls back to baseDir if Desktop hasn't placed anything in
 // bundlesDir yet.
-func (b *KvmBackend) findBundle() (string, error) {
+func (b *KvmBackend) findBundle(bundlePath string) (string, error) {
+	if bundlePath != "" {
+		requested := filepath.Clean(bundlePath)
+		if info, err := os.Stat(requested); err == nil && !info.IsDir() {
+			requested = filepath.Dir(requested)
+		}
+		if hasUsableRootfs(requested) {
+			return requested, nil
+		}
+		return "", fmt.Errorf("requested bundle %s has no rootfs.qcow2 or rootfs.vhdx", requested)
+	}
+
 	candidates := []string{b.bundlesDir, b.baseDir}
 	for _, dir := range candidates {
 		if dir == "" {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(dir, "rootfs.qcow2")); err == nil {
-			return dir, nil
-		}
-		if _, err := os.Stat(filepath.Join(dir, "rootfs.vhdx")); err == nil {
+		if hasUsableRootfs(dir) {
 			return dir, nil
 		}
 		entries, err := os.ReadDir(dir)
@@ -840,14 +942,95 @@ func (b *KvmBackend) findBundle() (string, error) {
 				continue
 			}
 			d := filepath.Join(dir, e.Name())
-			for _, f := range []string{"rootfs.qcow2", "rootfs.vhdx"} {
-				if _, err := os.Stat(filepath.Join(d, f)); err == nil {
-					return d, nil
-				}
+			if hasUsableRootfs(d) {
+				return d, nil
 			}
 		}
 	}
 	return "", fmt.Errorf("no rootfs in %s or %s", b.bundlesDir, b.baseDir)
+}
+
+func hasUsableRootfs(dir string) bool {
+	for _, f := range []string{"rootfs.qcow2", "rootfs.vhdx"} {
+		if _, err := os.Stat(filepath.Join(dir, f)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func (b *KvmBackend) takeExitedVMStateLocked() (vmRuntimeState, bool) {
+	if !b.started {
+		return vmRuntimeState{}, false
+	}
+	if b.qemu != nil && b.qemu.IsRunning() {
+		return vmRuntimeState{}, false
+	}
+	return b.takeVMRuntimeLocked(), true
+}
+
+func (b *KvmBackend) takeVMRuntimeLocked() vmRuntimeState {
+	state := vmRuntimeState{
+		qemu:         b.qemu,
+		qmp:          b.qmp,
+		helper:       b.helper,
+		bridge:       b.bridge,
+		sessionDir:   b.sessionDir,
+		sessionName:  b.sessionName,
+		bundleDir:    b.bundleDir,
+		watchdogStop: b.watchdogStop,
+	}
+	b.started = false
+	b.qemu = nil
+	b.qmp = nil
+	b.helper = nil
+	b.bridge = nil
+	b.sessionDir = ""
+	b.sessionName = ""
+	b.bundleDir = ""
+	b.watchdogStop = nil
+	return state
+}
+
+func (b *KvmBackend) cleanupVMRuntime(state vmRuntimeState, name string, reason string) {
+	if reason != "" {
+		log.Printf("%s", reason)
+	}
+	if state.watchdogStop != nil {
+		close(state.watchdogStop)
+	}
+	if state.bridge != nil {
+		state.bridge.Close()
+	}
+	if state.qemu != nil {
+		state.qemu.Shutdown(state.qmp)
+	}
+	if state.qmp != nil {
+		if err := state.qmp.Close(); err != nil && b.debug {
+			log.Printf("[kvm] qmp close: %v", err)
+		}
+	}
+	if state.helper != nil {
+		state.helper.Stop()
+	}
+	if state.sessionDir != "" {
+		if err := os.RemoveAll(state.sessionDir); err != nil {
+			log.Printf("[kvm] session cleanup error: %v", err)
+		}
+	}
+
+	b.procMu.Lock()
+	b.processes = make(map[string]struct{})
+	b.procMu.Unlock()
+
+	stopName := name
+	if stopName == "" {
+		stopName = state.sessionName
+	}
+	b.emit(map[string]interface{}{
+		"type": "networkStatus", "status": "disconnected",
+	})
+	b.emit(map[string]interface{}{"type": "vmStopped", "name": stopName})
 }
 
 func randomID() string {

@@ -30,7 +30,7 @@ type DeleteSessionDirsResult struct {
 type VMBackend interface {
 	Configure(memoryMB int, cpuCount int) error
 	CreateVM(name string) error
-	StartVM(name string) error
+	StartVM(name string, bundlePath string, memoryGB int) error
 	StopVM(name string) error
 	IsRunning(name string) (bool, error)
 	IsGuestConnected(name string) (bool, error)
@@ -40,7 +40,7 @@ type VMBackend interface {
 	IsProcessRunning(processID string) (bool, error)
 	MountPath(processID string, subpath string, mountName string, mode string) error
 	ReadFile(processName string, filePath string) ([]byte, error)
-	InstallSdk(name string) error
+	InstallSdk(sdkSubpath string, version string) error
 	AddApprovedOauthToken(name string, token string) error
 	SetDebugLogging(enabled bool)
 	SubscribeEvents(name string, callback func(event interface{})) (cancel func(), err error)
