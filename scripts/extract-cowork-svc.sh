@@ -129,22 +129,26 @@ COWORK_SVC="$TMPDIR_WORK/nupkg/lib/net45/cowork-svc.exe"
 if [ ! -f "$COWORK_SVC" ]; then
     info "cowork-svc.exe not at expected path, searching..."
     COWORK_SVC=$(find "$TMPDIR_WORK/nupkg" -name "cowork-svc.exe" -type f | head -1)
-    [ -n "$COWORK_SVC" ] || die "cowork-svc.exe not found in nupkg"
 fi
 
-BIN_SOURCE_DIR="$(dirname "$COWORK_SVC")"
+if [ -n "$COWORK_SVC" ] && [ -f "$COWORK_SVC" ]; then
+    BIN_SOURCE_DIR="$(dirname "$COWORK_SVC")"
+    info "Found binaries in: $BIN_SOURCE_DIR"
+else
+    warn "cowork-svc.exe is no longer bundled in this version ($LATEST_VERSION)"
+    BIN_SOURCE_DIR="$TMPDIR_WORK/nupkg/lib/net45/resources"
+    [ -d "$BIN_SOURCE_DIR" ] || die "Fallback path lib/net45/resources/ not found in nupkg"
+    info "Using fallback path: $BIN_SOURCE_DIR"
+fi
 
-info "Found binaries in: $BIN_SOURCE_DIR"
 info "Files at this level:"
 find "$BIN_SOURCE_DIR" -maxdepth 1 -type f -exec ls -lh {} + 2>/dev/null | while read -r line; do
     info "  $line"
 done || true
 
-# Create output dir and copy all files from the same level
 mkdir -p "$OUTPUT_DIR"
 rm -rf "$OUTPUT_DIR"/*
 
-# Copy all files (not subdirectories) from the cowork-svc.exe directory
 find "$BIN_SOURCE_DIR" -maxdepth 1 -type f -exec cp {} "$OUTPUT_DIR/" \;
 
 FILE_COUNT=$(find "$OUTPUT_DIR" -maxdepth 1 -type f | wc -l)

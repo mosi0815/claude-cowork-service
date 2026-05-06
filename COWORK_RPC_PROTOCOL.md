@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference — v1.5354.0
+# Cowork RPC Protocol Reference — v1.6259.0
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -973,6 +973,8 @@ These methods exist in cowork-svc.exe (from binary string analysis) but are not 
 **v1.3109.0:** No new RPC methods. Protocol remains at 22 methods and 8 event types. cowork-svc.exe is a **clean rebuild with byte-identical size** (12,648,272 bytes) — only build metadata differs (new VCS revision `35cbf6530e05912137624cde0f075dc7f121fa60`, timestamp `2026-04-16T20:32:01Z`). No new handler functions or error strings. app.asar grew substantially (10.1 → 14.6 MB) but is entirely minifier symbol renames; all 22 of our RPC method names are still called by Desktop, and all session dispatch machinery (`CLAUDE_CODE_TAGS:\`lam_session_type:${sessionType}\``, `CLAUDE_CODE_BRIEF`, `disallowedTools`, `present_files`, `session_type:"cowork"`) is unchanged. VM bundle unchanged (same SHA `5680b11b...`, same checksums). SDK versions unchanged. **No Go code changes required.**
 
 **v1.4758.0:** No new RPC methods. Protocol remains at 22 methods and 9 event types. Two parameter additions: `configure` gains optional `userDataName` (string) and `sessionOnly` (boolean); `subscribeEvents` gains optional `userDataName` (string). New on-connect behavior: Desktop now sends a fire-and-forget `configure({userDataName: "Claude", sessionOnly: true})` immediately upon pipe connect, before any other RPC calls (see Discovery #13). New spawn env vars: `CLAUDE_CODE_AUTO_COMPACT_WINDOW`, `CLAUDE_CODE_CLASSIFIER_SUMMARY`, `CLAUDE_CODE_ENABLE_APPEND_SUBAGENT_PROMPT`, `CLAUDE_CODE_ENABLE_TASKS`, `CLAUDE_CODE_OTEL_HEADERS_HELPER_DEBOUNCE_MS`, `CLAUDE_CODE_RATE_LIMIT_TIER`, `CLAUDE_CODE_SUBSCRIPTION_TYPE`, `CLAUDE_COWORK_MEMORY_GUIDELINES`, `CLAUDE_FORCE_HOST_LOOP`. Removed spawn env vars: `CLAUDE_CODE_PROXY_RESOLVES_HOSTS`, `CLAUDE_INTERNAL_FC_OVERRIDES`, `CLAUDE_RPC_TOKEN`. Wire protocol otherwise unchanged.
+
+**v1.5354.0 - v1.6259.0:** No RPC protocol changes. All 22 methods, 9 event types, and wire format (4-byte big-endian length prefix + JSON) are completely identical across this version range. No new parameters, no removed parameters, no behavioral changes at the protocol level.
 
 ---
 

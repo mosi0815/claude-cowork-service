@@ -1,27 +1,31 @@
-# Cowork Service Binary Analysis — v1.5354.0
+# Cowork Service Binary Analysis - v1.6259.0
 
 ## Binary Overview
 
-- **Windows**: cowork-svc.exe — Go binary (~11 MB), implements Hyper-V VM management
-- **macOS**: cowork-svc — Go binary (~4.5 MB), implements Apple Virtualization framework
-- Both bundled inside Claude Desktop installer at `lib/net45/` level
+- **Windows (pre-v1.6259.0)**: cowork-svc.exe - Go binary (~12.6 MB), implemented Hyper-V VM management. **Removed from installer as of v1.6259.0.** The pipe protocol client code (TypeScript) still exists in the Electron app and connects to `\\.\pipe\cowork-vm-service` the same way, but the Go binary is no longer bundled. The serving side is presumably downloaded on demand or managed externally now.
+- **macOS**: Now uses `@ant/claude-swift` - a native Swift addon using Apple Virtualization.framework directly. The Go binary (`cowork-svc`) is no longer used; VM management bypasses Go entirely.
+- **Linux (ours)**: cowork-svc-linux - Go binary, direct host execution. Unaffected by the upstream binary removal since we never depended on cowork-svc.exe at runtime.
 
 ## Extracted Files (bin/ directory)
 
-The extract script pulls all files from the same directory level as cowork-svc.exe:
+The extract script pulls all files from the installer's resource directory:
 
-| File | Size | Purpose |
-|------|------|---------|
-| cowork-svc.exe | 12 MB | Windows Hyper-V backend (Go binary) |
-| app.asar | 28 MB | Claude Desktop Electron app (same as main app) |
-| chrome-native-host.exe | 1 MB | Chrome native messaging host for browser tools |
-| cowork-plugin-shim.sh | 7.5 KB | Plugin permission gating library (new in v1.1.9669, updated in v1.2581.0) |
-| smol-bin.x64.vhdx | 36 MB | Empty ext4 filesystem for sdk-daemon updater |
-| *.json (locale files) | ~15-75 KB each | UI translations (de-DE, en-US, es-419, etc.) |
-| *.png / *.ico | ~2-4 KB each | Tray icons (light/dark, various DPI) |
-| .version | 10 bytes | Version string ("1.5354.0") |
+| File | Size | Purpose | Status in v1.6259.0 |
+|------|------|---------|---------------------|
+| cowork-svc.exe | 12.6 MB | Windows Hyper-V backend (Go binary) | **REMOVED** - no longer bundled |
+| app.asar | ~28 MB | Claude Desktop Electron app (same as main app) | Present |
+| chrome-native-host.exe | 1 MB | Chrome native messaging host for browser tools | Present |
+| cowork-plugin-shim.sh | 7.5 KB | Plugin permission gating library (new in v1.1.9669, updated in v1.2581.0) | **REMOVED** |
+| smol-bin.x64.vhdx | 36 MB | Empty ext4 filesystem for sdk-daemon updater | **REMOVED** |
+| *.json (locale files) | ~15-75 KB each | UI translations (de-DE, en-US, es-419, etc.) | Present |
+| *.png / *.ico | ~2-4 KB each | Tray icons (light/dark, various DPI) | Present |
+| .version | 10 bytes | Version string ("1.6259.0") | Present |
+
+**New directories in v1.6259.0 installer**: `fonts/`, `drizzle/sqlite/`, `ion-dist/`, `seed/`.
 
 ## Windows Architecture
+
+### Pre-v1.6259.0 (bundled Go binary)
 
 ```
 Claude Desktop (Electron)
@@ -33,7 +37,23 @@ Claude Desktop (Electron)
             -> Claude Code CLI
 ```
 
+### v1.6259.0+ (Go binary removed from installer)
+
+```
+Claude Desktop (Electron)
+  -> Named Pipe (\\.\pipe\cowork-vm-service)
+    -> ??? (binary presumably downloaded on demand or managed externally)
+      -> Hyper-V API
+        -> Linux VM
+          -> sdk-daemon (vsock)
+            -> Claude Code CLI
+```
+
+The TypeScript pipe client in `index.js` still connects to the same named pipe and sends the same length-prefixed JSON RPC messages. The Go binary that serves the pipe is no longer shipped in the installer - it is either downloaded separately at runtime or replaced by an alternative mechanism.
+
 ## macOS Architecture
+
+### Pre-v1.6259.0
 
 ```
 Claude Desktop (Electron)
@@ -44,6 +64,19 @@ Claude Desktop (Electron)
           -> sdk-daemon (vsock)
             -> Claude Code CLI
 ```
+
+### v1.6259.0+ (native Swift addon)
+
+```
+Claude Desktop (Electron)
+  -> @ant/claude-swift native addon
+    -> Apple Virtualization.framework
+      -> Linux VM
+        -> sdk-daemon (vsock)
+          -> Claude Code CLI
+```
+
+The macOS path now uses `@ant/claude-swift` directly from Electron, bypassing the Go binary entirely.
 
 ## Linux Native Architecture (Our Implementation)
 
@@ -57,18 +90,20 @@ Claude Desktop (Electron, patched)
 
 ## Protocol Differences Between Platforms
 
-| Aspect | Windows | macOS | Linux (ours) |
-|--------|---------|-------|-------------|
-| Transport | Named Pipe | Unix Socket | Unix Socket |
-| VM | Hyper-V | Apple Virtualization | None (native) |
-| Guest comms | HVSocket (AF_HYPERV) | vsock (AF_VSOCK) | N/A (direct exec) |
-| vsock port | 0xC822 (51234) | 0xC822 (51234) | N/A |
-| Binary | cowork-svc.exe (Go) | cowork-svc (Go+Swift) | cowork-svc-linux (Go) |
-| Bundle | rootfs.vhdx + vmlinuz + initrd | rootfs.img | None needed |
+| Aspect | Windows (pre-v1.6259.0) | Windows (v1.6259.0+) | macOS (v1.6259.0+) | Linux (ours) |
+|--------|------------------------|----------------------|--------------------|----|
+| Transport | Named Pipe | Named Pipe (unchanged) | Native Swift addon | Unix Socket |
+| VM | Hyper-V | Hyper-V (unchanged) | Apple Virtualization.framework via @ant/claude-swift | None (native) |
+| Guest comms | HVSocket (AF_HYPERV) | HVSocket (unchanged) | vsock (AF_VSOCK) | N/A (direct exec) |
+| vsock port | 0xC822 (51234) | 0xC822 (51234) | 0xC822 (51234) | N/A |
+| Binary | cowork-svc.exe (Go, bundled) | Go binary (not bundled, sourced externally) | @ant/claude-swift (native addon) | cowork-svc-linux (Go) |
+| Bundle | rootfs.vhdx + vmlinuz + initrd | rootfs.vhdx + vmlinuz + initrd | rootfs.img | None needed |
 
 ---
 
-## cowork-svc.exe Deep Analysis (v1.5354.0)
+## cowork-svc.exe Deep Analysis (last version: v1.5354.0)
+
+> **NOTE:** cowork-svc.exe was **removed from the Claude Desktop installer as of v1.6259.0**. The analysis below reflects the last shipped version (v1.5354.0). The pipe protocol is unchanged - the TypeScript client in `index.js` still connects to `\\.\pipe\cowork-vm-service` and sends the same 22 RPC methods. On Windows, the Go binary that serves the pipe is now sourced externally rather than bundled in the installer.
 
 | Property | Value |
 |----------|-------|
@@ -78,6 +113,8 @@ Claude Desktop (Electron, patched)
 | **Build date** | 2026-04-29 |
 | **Size** | 12,655,440 bytes |
 | **SHA256** | 026c6d2c163498e840b649049cbe3ce3fe451d9cac4dc1bf5077736b551f8cca |
+| **Last bundled version** | v1.5354.0 |
+| **Removed in** | v1.6259.0 |
 
 ### Go Module Structure (from binary strings)
 
@@ -219,15 +256,17 @@ Three packages: `main`, `pipe`, `vm`
 
 ---
 
-## bin/ Directory Checksums (v1.4758.0)
+## bin/ Directory Checksums (v1.6259.0)
 
-| File | SHA256 |
-|------|--------|
-| cowork-svc.exe | 4ccc771f26fd2db82b072f6cf4c61af2802a737940bf5d4436b9a7d28cd9cbc8 |
-| cowork-plugin-shim.sh | 2fbef5ee6c07c26a1f7cd9204e1b6d37537edd2b96c0ce025010b890cb5935e7 *(unchanged from v1.2773.0)* |
-| chrome-native-host.exe | 4c461ddd6e27f8feba5088c51e71f2be714f00ad61aaad8c853aba2e1b7f6ba3 |
-| smol-bin.x64.vhdx | 7afdc73e264fc992daa43560252907853cf1923986f11381e67dad27dd7af4bf |
-| app.asar | 06b87a63877d6546173924651f69c88b407eadbe1ff6dd6d0c1fb004c79da567 |
+As of v1.6259.0, three files have been removed from the installer. Checksums below reflect the current state.
+
+| File | SHA256 | Notes |
+|------|--------|-------|
+| cowork-svc.exe | N/A | **REMOVED in v1.6259.0** (last SHA in v1.5354.0: `026c6d2c163498e840b649049cbe3ce3fe451d9cac4dc1bf5077736b551f8cca`) |
+| cowork-plugin-shim.sh | N/A | **REMOVED in v1.6259.0** (last SHA: `2fbef5ee6c07c26a1f7cd9204e1b6d37537edd2b96c0ce025010b890cb5935e7`) |
+| smol-bin.x64.vhdx | N/A | **REMOVED in v1.6259.0** (last SHA: `7afdc73e264fc992daa43560252907853cf1923986f11381e67dad27dd7af4bf`) |
+| chrome-native-host.exe | (verify on extraction) | Still present |
+| app.asar | (verify on extraction) | Still present, updated to v1.6259.0 |
 
 ---
 
@@ -235,9 +274,11 @@ Three packages: `main`, `pipe`, `vm`
 
 | Property | Value |
 |----------|-------|
-| **Package** | @ant/desktop v1.4758.0 |
+| **Package** | @ant/desktop v1.6259.0 |
 | **Electron** | 41.3.0 |
 | **Node requirement** | >=22.0.0 |
+| **Sentry release** | dc89db3be9b2bc795e0fda0ea3738b035a76ed46 |
+| **IPC UUID** | 04bc1015-f35e-40f2-b55a-23c8655d8373 |
 
 ### New in v1.1.9669
 
@@ -270,6 +311,21 @@ Three packages: `main`, `pipe`, `vm`
 - **Artifact lifecycle** — New telemetry events: `cowork_artifacts_created`, `cowork_artifacts_updated`, `cowork_artifacts_imported`, `cowork_artifacts_exported`
 - **IPC UUID change** — Internal Electron IPC bridge UUID changed (no protocol impact)
 - **SDK versions unchanged** — Same Electron 40.8.5, same claude-agent-sdk versions
+
+### New in v1.6259.0
+
+- **cowork-svc.exe REMOVED from installer** - This is the single biggest upstream change since the project began. The Go binary (`cowork-svc.exe`, ~12.6 MB) is no longer shipped in the Claude Desktop Windows installer. Previously located at `lib/net45/cowork-svc.exe` (later `lib/net45/resources/cowork-svc.exe`), it is simply absent from v1.6259.0. The pipe protocol client code in the Electron app (`index.js`) is unchanged - it still connects to `\\.\pipe\cowork-vm-service` and sends length-prefixed JSON RPC. The serving binary is presumably downloaded on demand or managed by a different mechanism now.
+- **smol-bin.x64.vhdx REMOVED** - The 36 MB empty ext4 filesystem (used as a side-loaded disk for sdk-daemon updates) is no longer in the installer.
+- **cowork-plugin-shim.sh REMOVED** - The plugin permission gating shell script (present since v1.1.9669, last updated in v1.2581.0) is gone.
+- **macOS now uses native Swift addon** - `@ant/claude-swift` handles VM management directly via Apple Virtualization.framework, bypassing the Go binary entirely. This is a platform-level architecture change on macOS.
+- **Named pipe protocol UNCHANGED** - All 22 RPC methods, 8 event types, spawn parameters, and 4-byte big-endian length-prefixed JSON wire format are identical between v1.5354.0 and v1.6259.0. No protocol-level changes are needed in our implementation.
+- **app.asar**: Updated to v1.6259.0. SDK 0.2.121 -> 0.2.128. New dependency: `@anthropic-ai/claude-agent-sdk` (native binary resolution). New build artifacts: `computerUseTeach.js` (already existed), `buddy.js`. New directories in installer: `fonts/`, `drizzle/sqlite/`, `ion-dist/`, `seed/`. Sentry release `dc89db3be9b2bc795e0fda0ea3738b035a76ed46`. IPC UUID `04bc1015-f35e-40f2-b55a-23c8655d8373`.
+- **Desktop-side changes** (no pipe protocol impact):
+  - Vertex auth renamed to interactive auth (`triggerVertexAuth` -> `triggerInteractiveAuth`, `revokeVertexAuth` -> `revokeInteractiveAuth`)
+  - New IPC handlers: `LocalSessions_$_cancelQueuedMessage`, `LocalSessions_$_resolveSSHSettings`, `LocalSessions_$_submitFeedback`
+  - `"cowork-desktop-dispatch"` MCP server name removed (session type string gone)
+  - Skills system expansion
+- **Impact on this project**: None for the native backend. We never ran cowork-svc.exe - we replace it. The protocol we implement is unchanged. The only operational impact is that `scripts/extract-cowork-svc.sh` will no longer find `cowork-svc.exe` in the installer, so the extract script's binary extraction will produce fewer files.
 
 ### New in v1.4758.0
 
@@ -418,53 +474,62 @@ Three packages: `main`, `pipe`, `vm`
 
 ### Key Dependency Versions
 
-*(verified for v1.4758.0)*
+*(verified for v1.6259.0)*
 
-| Package | Version | Changed from v1.3883.0 |
+| Package | Version | Changed from v1.5354.0 |
 |---------|---------|------------------------|
-| @anthropic-ai/claude-agent-sdk | 0.2.119 | was 0.2.111 |
+| @anthropic-ai/claude-agent-sdk | 0.2.128 | was 0.2.121 |
+| @anthropic-ai/claude-agent-sdk (native binary resolution) | new | new dependency |
 | @anthropic-ai/claude-agent-sdk-future | 0.2.93-dev.20260403 | unchanged |
 | @anthropic-ai/conway-client | 0.2.0-dev.20260403 | unchanged |
-| @anthropic-ai/mcpb | 2.1.2 | — |
-| @anthropic-ai/sdk | ^0.70.0 | — |
+| @anthropic-ai/mcpb | 2.1.2 | unchanged |
+| @anthropic-ai/sdk | ^0.70.0 | unchanged |
 | @modelcontextprotocol/sdk | 1.28.0 | unchanged |
-| electron | 41.3.0 | was 41.2.0 |
-| typescript | ~6.0.2 | was ~5.8.3 |
-| zod | ^3.25.64 | — |
-| ws | ^8.18.0 | — |
-| ssh2 | ^1.16.0 | — |
+| electron | 41.3.0 | unchanged |
+| typescript | ~6.0.2 | unchanged |
+| zod | ^3.25.64 | unchanged |
+| ws | ^8.18.0 | unchanged |
+| ssh2 | ^1.16.0 | unchanged |
 
 ### Internal Workspace Packages
 
-@ant/chrome-native-host, @ant/claude-ssh, @ant/cowork-win32-service, @ant/claude-screen-app, @ant/claude-swift-ant, @ant/computer-use-mcp, @ant/imagine-server, @anthropic-ai/operon-core, @anthropic-ai/operon-web
+@ant/chrome-native-host, @ant/claude-ssh, @ant/cowork-win32-service, @ant/claude-screen-app, @ant/claude-swift, @ant/claude-swift-ant, @ant/computer-use-mcp, @ant/imagine-server, @anthropic-ai/operon-core, @anthropic-ai/operon-web
 
 ---
 
 ## Key Reverse Engineering Findings
 
-1. The Go binary uses standard library HTTP/JSON, making protocol analysis straightforward
+1. The Go binary used standard library HTTP/JSON, making protocol analysis straightforward (binary no longer bundled as of v1.6259.0)
 2. The vsock port 0xC822 (51234) is hardcoded in both platforms
-3. The named pipe on Windows uses the same length-prefixed JSON protocol as Unix sockets
-4. cowork-svc.exe includes a bundle downloader that fetches VM images from the CDN on first use
-5. The smol-bin.vhdx is used as a side-loaded disk for updating sdk-daemon inside the VM
+3. The named pipe on Windows uses the same length-prefixed JSON protocol as Unix sockets - this remains true even after the Go binary was removed from the installer
+4. cowork-svc.exe included a bundle downloader that fetches VM images from the CDN on first use (the binary itself may now be fetched similarly)
+5. The smol-bin.vhdx was used as a side-loaded disk for updating sdk-daemon inside the VM (removed in v1.6259.0)
 6. Spawn parameters match exactly between Windows and macOS (same field names, same JSON structure)
+7. **v1.6259.0**: The pipe protocol survives in the Electron app's TypeScript code even though the Go binary is no longer bundled. This confirms the protocol is the stable interface - the binary serving it is an implementation detail that can change independently
 
 ## What to Check on Update
 
-1. Run `strings bin/cowork-svc.exe | grep -i "method\|spawn\|subscribe\|event"` for new RPC methods
-2. Check if new files appear at the same directory level
-3. Compare binary size — significant changes may indicate new functionality
-4. Check the app.asar for changes to the TypeScript VM client (session management code)
-5. Compare cowork-svc.exe SHA256 against previous version
-6. Check Go version: `strings bin/cowork-svc.exe | grep "^go[0-9]"`
-7. Check for new `handle` functions: `strings bin/cowork-svc.exe | grep "handle[A-Z]"`
+**Note:** As of v1.6259.0, cowork-svc.exe is no longer bundled in the installer. Steps 1, 3, 5, 6, and 7 below only apply if the binary reappears in a future version or is obtained separately.
+
+1. ~~Run `strings bin/cowork-svc.exe | grep -i "method\|spawn\|subscribe\|event"` for new RPC methods~~ - Binary no longer bundled. Check the TypeScript VM client in app.asar instead for protocol changes
+2. Check if new files appear at the same directory level (new in v1.6259.0: `fonts/`, `drizzle/sqlite/`, `ion-dist/`, `seed/`)
+3. ~~Compare binary size~~ - Binary no longer bundled
+4. Check the app.asar for changes to the TypeScript VM client (session management code) - **this is now the primary source of protocol truth**
+5. ~~Compare cowork-svc.exe SHA256 against previous version~~ - Binary no longer bundled
+6. ~~Check Go version: `strings bin/cowork-svc.exe | grep "^go[0-9]"`~~ - Binary no longer bundled
+7. ~~Check for new `handle` functions: `strings bin/cowork-svc.exe | grep "handle[A-Z]"`~~ - Binary no longer bundled. Search the app.asar `index.js` for RPC method names instead
 8. Check app.asar dependency versions (especially @anthropic-ai/* and @modelcontextprotocol/sdk)
 9. Look for new internal workspace packages
+10. **NEW**: Check whether cowork-svc.exe has returned to the installer (Anthropic may re-bundle it or replace it with something else)
+11. **NEW**: Search app.asar for new RPC method names, event types, or spawn parameter fields
+12. **NEW**: Check for changes in the `@ant/claude-swift` native addon (macOS VM management)
 
 ## Version History
 
 | Claude Desktop Version | cowork-svc.exe Size | Notable Changes |
 |----------------------|-------------------|-----------------|
+| 1.6259.0 | **REMOVED** | cowork-svc.exe, smol-bin.x64.vhdx, and cowork-plugin-shim.sh all removed from installer. Pipe protocol unchanged (22 methods, 8 events). macOS switches to @ant/claude-swift native addon. SDK 0.2.128; new buddy.js build artifact; new installer dirs (fonts/, drizzle/sqlite/, ion-dist/, seed/); Vertex auth renamed to interactive auth; new IPC handlers |
+| 1.5354.0 | 12,655,440 bytes | Clean rebuild, same size; same Go version (go1.24.13); last version where cowork-svc.exe was bundled; SDK 0.2.121; new @ant/rfb-client dependency; node-pty module added |
 | 1.4758.0 | 12,655,440 bytes | Rebuild (same size, new SHA); new source files: variant.go, signature.go, vhdx.go, logfile_security.go; new VM methods: SetCondaDiskPath, SetSessionDiskPath, HasUnreleasedResources; client signature verification (WinVerifyTrust); VHDX sparse disk creation; persistent bidirectional RPC; plugin permission gating updated; guest-to-host protocol; log ACL hardening; idle session cleanup; Electron 41.3.0; TypeScript ~6.0.2; SDK 0.2.119; new computerUseTeach.js build artifact |
 | 1.3883.0 | 12,655,440 bytes | Minor rebuild (+512 bytes); `configure: %w` error wrapping; `default.clod` removed; no new RPC methods; app.asar +19.5%; VM bundle unchanged; new client-side features: coworkArtifacts, coworkSpaceContextEnabled, DebugHandoff, list_connectors MCP tool, multi-plugin suggest_plugin_install, present_files atomic writes |
 | 1.3561.0 | 12,654,928 bytes | Rebuild +6.6 KB; cert date rotation; no new RPC methods; SDK 0.2.111; new Desktop features: EnabledCliOpsStore, coworkTrustedDeviceToken, is_child session listing, SSH remote spawn, title-gen spawn |
