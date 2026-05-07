@@ -66,11 +66,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6.0.2
+        with:
+          submodules: recursive
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
           cache: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Vet
         run: go vet ./...
@@ -85,6 +91,9 @@ jobs:
 
       - name: Cross-compile ARM64
         run: make build-arm64
+
+      - name: Build sandbox-runtime (srt) executables
+        run: make build-srt
 
       - name: Test
         run: go test ./...
@@ -133,11 +142,16 @@ jobs:
       - uses: actions/checkout@v6.0.2
         with:
           fetch-depth: 0
+          submodules: recursive
 
       - uses: actions/setup-go@v5
         with:
           go-version: '1.22'
           cache: false
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
       - name: Update CHANGELOG and create tag (workflow_dispatch only)
         if: github.event_name == 'workflow_dispatch'
@@ -174,10 +188,15 @@ jobs:
       - name: Build release binary (ARM64)
         run: make build-arm64 VERSION=${RELEASE_VERSION#v}
 
+      - name: Build sandbox-runtime (srt) executables
+        run: make build-srt
+
       - name: Generate checksums
         run: |
           sha256sum cowork-svc-linux > cowork-svc-linux.sha256
           sha256sum cowork-svc-linux-arm64 > cowork-svc-linux-arm64.sha256
+          sha256sum srt/srt-linux-amd64 > srt/srt-linux-amd64.sha256
+          sha256sum srt/srt-linux-arm64 > srt/srt-linux-arm64.sha256
 
       - name: Build Debian package (amd64)
         id: deb
@@ -262,6 +281,7 @@ jobs:
               dnf install -y /dist/test.rpm
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
+              test -x /usr/bin/srt
               echo 'RPM x86_64 test passed'
             "
 
@@ -275,6 +295,7 @@ jobs:
               dnf install -y /dist/test.rpm
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
+              test -x /usr/bin/srt
               echo 'RPM aarch64 test passed'
             "
 
@@ -289,6 +310,7 @@ jobs:
               apt-get install -y /dist/claude-cowork-service_*_arm64.deb
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
+              test -x /usr/bin/srt
               echo 'DEB arm64 test passed'
             "
 
@@ -316,6 +338,10 @@ jobs:
             cowork-svc-linux.sha256
             cowork-svc-linux-arm64
             cowork-svc-linux-arm64.sha256
+            srt/srt-linux-amd64
+            srt/srt-linux-amd64.sha256
+            srt/srt-linux-arm64
+            srt/srt-linux-arm64.sha256
             ${{ steps.deb.outputs.deb_file }}
             ${{ steps.deb.outputs.deb_file }}.sha256
             ${{ steps.deb_arm64.outputs.deb_file }}
