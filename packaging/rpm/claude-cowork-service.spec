@@ -12,6 +12,9 @@ URL:            https://github.com/patrickjaja/claude-cowork-service
 ExclusiveArch:  x86_64 aarch64
 
 Requires:       systemd
+Requires:       bubblewrap
+Requires:       socat
+Requires:       ripgrep
 
 %description
 Reverse-engineered from Windows cowork-svc.exe. Implements the
@@ -24,6 +27,7 @@ rm -rf %{buildroot}
 # Install binary
 mkdir -p %{buildroot}/usr/bin
 install -m755 %{_sourcedir}/cowork-svc-linux %{buildroot}/usr/bin/cowork-svc-linux
+install -m755 %{_sourcedir}/srt %{buildroot}/usr/bin/srt
 
 # Install systemd user service
 mkdir -p %{buildroot}/usr/lib/systemd/user
@@ -40,4 +44,5 @@ echo ""
 
 %files
 /usr/bin/cowork-svc-linux
+/usr/bin/srt
 /usr/lib/systemd/user/claude-cowork.service
