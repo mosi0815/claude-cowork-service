@@ -86,6 +86,10 @@ license=('MIT')
 depends=('systemd' 'util-linux' 'bubblewrap' 'socat' 'ripgrep')
 optdepends=('claude-desktop-bin: Unofficial Linux frontend for Claude Desktop Cowork'
             'claude-code: An agentic coding tool that lives in your terminal')
+# srt-cowork is a bun-compiled executable with its JS payload appended at the
+# end of the file; stripping or producing a debug split corrupts that payload
+# and the binary degrades into vanilla bun (printing the bun help text).
+options=('!strip' '!debug')
 install="claude-cowork-service.install"
 
 source=('cowork-svc-linux'

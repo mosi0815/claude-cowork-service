@@ -30,6 +30,12 @@ buildGoModule rec {
 
   env.CGO_ENABLED = 0;
 
+  # srt-cowork is a bun-compiled executable with its JS payload appended at the
+  # end of the file; the default strip pass would clip that payload and degrade
+  # the binary into vanilla bun. Skip stripping for the whole derivation —
+  # cowork-svc-linux is a Go PIE binary that we already build with -trimpath.
+  dontStrip = true;
+
   nativeBuildInputs = [ makeWrapper ];
 
   ldflags = [

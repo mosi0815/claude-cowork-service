@@ -1,5 +1,10 @@
 %define _build_id_links none
 %global debug_package %{nil}
+# srt-cowork is a bun-compiled executable with its JS payload appended at the
+# end of the file; rpmbuild's default brp-strip / brp-strip-static-archive
+# would clip that payload and degrade the binary into vanilla bun.
+# Skip all post-install binary processing.
+%global __os_install_post %{nil}
 
 Name:           claude-cowork-service
 Version:        %{pkg_version}

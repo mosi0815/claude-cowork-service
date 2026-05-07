@@ -282,6 +282,10 @@ jobs:
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
               test -x /usr/bin/srt-cowork
+              # Guard against strip clipping bun's appended JS payload — a
+              # stripped binary still runs but degrades into vanilla bun.
+              srt-cowork --help 2>&1 | grep -q 'Run commands in a sandbox' \
+                || { echo 'srt-cowork is not the sandbox-runtime CLI (likely stripped)'; exit 1; }
               echo 'RPM x86_64 test passed'
             "
 
@@ -296,6 +300,10 @@ jobs:
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
               test -x /usr/bin/srt-cowork
+              # Guard against strip clipping bun's appended JS payload — a
+              # stripped binary still runs but degrades into vanilla bun.
+              srt-cowork --help 2>&1 | grep -q 'Run commands in a sandbox' \
+                || { echo 'srt-cowork is not the sandbox-runtime CLI (likely stripped)'; exit 1; }
               echo 'RPM aarch64 test passed'
             "
 
@@ -311,6 +319,10 @@ jobs:
               cowork-svc-linux -version
               test -f /usr/lib/systemd/user/claude-cowork.service
               test -x /usr/bin/srt-cowork
+              # Guard against strip clipping bun's appended JS payload — a
+              # stripped binary still runs but degrades into vanilla bun.
+              srt-cowork --help 2>&1 | grep -q 'Run commands in a sandbox' \
+                || { echo 'srt-cowork is not the sandbox-runtime CLI (likely stripped)'; exit 1; }
               echo 'DEB arm64 test passed'
             "
 
