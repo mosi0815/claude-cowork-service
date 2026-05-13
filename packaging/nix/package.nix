@@ -44,7 +44,7 @@ buildGoModule rec {
     owner = "patrickjaja";
     repo = "claude-cowork-service";
     rev = "v${version}";
-    hash = "sha256-VGFM7OxFD1nYn+FhDonI7J99f8xC6CLbcZ8sJU1dQ+4=";
+    hash = "sha256-rNFoTFNsZQOFYMJ3yli5rSCRx573o0HlO/PyrjskNIg=";
   };
 
   vendorHash = "sha256-g+yaVIx4jxpAQ/+WrGKxhVeliYx7nLQe/zsGpxV4Fn4=";

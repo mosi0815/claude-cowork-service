@@ -20,11 +20,12 @@ import (
 
 // localProcess tracks a single spawned host process.
 type localProcess struct {
-	id    string
-	cmd   *exec.Cmd
-	stdin io.WriteCloser
-	done  chan struct{}
-	mu    sync.Mutex
+	id       string
+	cmd      *exec.Cmd
+	stdin    io.WriteCloser
+	done     chan struct{}
+	exitCode int
+	mu       sync.Mutex
 }
 
 // processTracker manages all spawned processes and streams their output via event callbacks.
@@ -201,6 +202,7 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 			}
 		}
 
+		lp.exitCode = code
 		if sig != "" {
 			pt.emit(process.NewExitEventWithSignal(id, code, sig))
 		} else {
@@ -266,6 +268,12 @@ func jsonBraceDelta(line string) int {
 }
 
 // kill sends a signal to a process. If signal is empty, defaults to SIGTERM.
+//
+// For SIGTERM (the default), we first attempt a graceful shutdown by sending
+// SIGINT and waiting up to 3 seconds for the process to exit. This allows the
+// Claude CLI to flush pending tool results to the queue JSONL file, preventing
+// session data loss from mid-stream kills (the root cause of session corruption
+// where the queue file gets truncated while a tool execution is in progress).
 func (pt *processTracker) kill(processID string, signal string) error {
 	pt.mu.RLock()
 	lp, ok := pt.processes[processID]
@@ -372,21 +380,21 @@ func (pt *processTracker) writeStdin(processID string, data []byte) error {
 	}
 }
 
-// isRunning checks if a tracked process is still running.
-func (pt *processTracker) isRunning(processID string) (bool, error) {
+// isRunning checks if a tracked process is still running and returns its exit code.
+func (pt *processTracker) isRunning(processID string) (bool, int, error) {
 	pt.mu.RLock()
 	lp, ok := pt.processes[processID]
 	pt.mu.RUnlock()
 
 	if !ok {
-		return false, nil
+		return false, 0, nil
 	}
 
 	select {
 	case <-lp.done:
-		return false, nil
+		return false, lp.exitCode, nil
 	default:
-		return true, nil
+		return true, 0, nil
 	}
 }
 

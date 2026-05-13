@@ -7,6 +7,19 @@ All notable changes to claude-cowork-service will be documented in this file.
 ### Added
 - **`network.allowAllUnixSockets` option in sandbox config** (`sandbox/backend.go`, `sandbox/config.go`) — opt-in flag, plumbed through to `srt-cowork`'s native `network.allowAllUnixSockets` field. When set in `~/.config/claude-cowork-service/sandbox.yaml`, sandboxed sessions can connect to host Unix sockets (Docker daemon, ssh-agent, etc.). Disabled by default for safety; the JSON tag uses `omitempty` so the field is only emitted when on, preserving SRT's secure default. The companion `allowUnixSockets` path-allowlist from upstream is intentionally not exposed because it is documented as macOS-only — Linux's seccomp cannot filter sockets by path, so the flag is all-or-nothing on this platform.
 
+### Fixed
+- `isProcessRunning` response now includes `exitCode` field alongside `running` — Desktop expects both fields for process health monitoring.
+- Mount path canonicalization on systems where `/home` is a symlink to `/var/home` (Fedora Silverblue, Bazzite, CoreOS, Universal Blue) — `resolveSubpath()` now resolves symlinks when the fast string prefix check fails, preventing doubled paths like `/var/home/user/home/user/...` (#40).
+- `hostAbsFromShared()` in VM backend no longer rejects valid paths as "outside home" on symlinked home systems.
+- `ReadFile()` home containment check in VM backend now uses canonicalized paths.
+
+### Changed
+- **Upstream update to Claude Desktop v1.6608.2** — Three rebuild-only upstream releases (v1.6608.0 → v1.6608.1 → v1.6608.2). Protocol-level changes: `addApprovedOauthToken` simplified (Desktop now sends only `{token}`, the `name` field was removed); `spawn` no longer sends `mountConda` (Operon/Conda removed upstream); `startVM` gains optional `cpuCount` and `apiProbeURL` fields (ignored natively); `createDiskImage` RPC handler retained as no-op for backward compatibility. Reference docs (`COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md`, `CLAUDE.md`, `update-prompt.md`) updated to v1.6608.2.
+- **Extract scripts migrated from Squirrel (nupkg) to MSIX** — `scripts/extract-cowork-svc.sh` and `scripts/extract-vm-bundle.sh` now download the `.msix` package and use `7z` to extract from `app/resources/` directly (previously `lib/net45/resources/`), with a URL-decode pass for MSIX `%40` encoding.
+
+### Removed
+- **Merged main into `feature/sandbox`** without bringing in PR #41 (graceful shutdown / pre-kill backup / session integrity check / `cowork-session-doctor` Python tool). These changes were incompatible with the simplified hostloop-only backend on this branch.
+
 ## 1.0.53 — 2026-05-05
 
 ### Added
@@ -17,8 +30,7 @@ All notable changes to claude-cowork-service will be documented in this file.
 - **`StartVM` now receives the bundle path from the RPC layer** (`pipe/handlers.go`) — `pipe/handlers.go` forwards `params.BundlePath` to the backend so KVM can resolve the guest disk before launch instead of inferring it from the session name.
 - **`Spawn` vfs bind failure now returns an RPC error** (`vm/backend.go`) — previously the bind error path synthesised a `stderr` + `exit code 1` pair on the process channel and returned `nil`, so Desktop saw a "process started, then died" sequence with no actionable error. We now return the bind error directly so `spawn` fails loud and Desktop's normal error handling kicks in.
 - **Upstream update to Claude Desktop v1.6259.0** (from v1.5354.0)
-- **cowork-svc.exe removed from installer** - The Go binary is no longer shipped in the Claude Desktop Windows installer. The named pipe protocol survives in the TypeScript VM client (index.js), but the binary that serves it is no longer bundled. macOS now uses @ant/claude-swift native addon for VM management via Apple Virtualization.framework.
-- **smol-bin.x64.vhdx removed from installer** - The empty ext4 disk is no longer bundled.
+- **Extract scripts migrated from Squirrel to MSIX** - Claude Desktop switched installer format from Squirrel (nupkg at `lib/net45/resources/`) to MSIX (at `app/resources/`). The extract scripts were updated to use MSIX extraction. `cowork-svc.exe` and `smol-bin.x64.vhdx` were never actually removed - they moved to the MSIX package structure. macOS now uses @ant/claude-swift native addon for VM management via Apple Virtualization.framework.
 - **cowork-plugin-shim.sh removed from installer** - The plugin shim script is no longer bundled.
 - **VM bundle**: Unchanged - same SHA (`5680b11b...`), same file checksums (stable since v1.1.9669)
 - **app.asar**: SDK 0.2.121 -> 0.2.128. New build artifacts: buddy.js. New installer directories: fonts/, drizzle/sqlite/, ion-dist/, seed/.
@@ -27,7 +39,7 @@ All notable changes to claude-cowork-service will be documented in this file.
 - **No new RPC methods** - all 22 methods, 8 event types, spawn parameters, and wire format are identical
 - **No Go code changes needed**
 - **Updated reference docs** - COWORK_RPC_PROTOCOL.md, COWORK_SVC_BINARY.md, COWORK_VM_BUNDLE.md updated to v1.6259.0
-- **extract-cowork-svc.sh updated** - Script now falls back to extracting from lib/net45/resources/ when cowork-svc.exe is not found in the installer (handles v1.6259.0+ installer structure change)
+- **extract-cowork-svc.sh updated** - Script now extracts from MSIX package (`app/resources/`) instead of Squirrel nupkg (`lib/net45/resources/`), matching the current installer format
 
 ### Fixed
 - **KVM exit event key mismatch** (`vm/bridge.go`) — the guest emits exit events as `{"type":"event","event":"exit","params":{"code":N,...}}`, but the native backend's `process.ExitEvent` uses `"exitCode"`. The bridge was forwarding the guest's `"code"` verbatim, so KVM-mode clients saw a different field name than native-mode clients. Both the nested-event form and the direct-event form now rename `code` → `exitCode` before emit.
