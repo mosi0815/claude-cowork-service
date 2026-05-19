@@ -41,11 +41,15 @@ install: build
 	test -f "$(SRT_BINARY)" || { echo "Missing $(SRT_BINARY); run: make build-srt" >&2; exit 1; }
 	install -Dm755 "$(SRT_BINARY)" $(DESTDIR)$(PREFIX)/bin/srt-cowork
 	install -Dm644 claude-cowork.service $(DESTDIR)$(PREFIX)/lib/systemd/user/claude-cowork.service
+	install -Dm755 claude-cowork.openrc $(DESTDIR)/etc/init.d/claude-cowork
+	install -Dm644 claude-cowork.confd $(DESTDIR)/etc/conf.d/claude-cowork
 
 uninstall:
 	rm -f $(DESTDIR)$(PREFIX)/bin/$(BINARY)
 	rm -f $(DESTDIR)$(PREFIX)/bin/srt-cowork
 	rm -f $(DESTDIR)$(PREFIX)/lib/systemd/user/claude-cowork.service
+	rm -f $(DESTDIR)/etc/init.d/claude-cowork
+	rm -f $(DESTDIR)/etc/conf.d/claude-cowork
 
 lint:
 	$(GO) vet ./...

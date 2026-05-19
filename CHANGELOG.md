@@ -5,20 +5,94 @@ All notable changes to claude-cowork-service will be documented in this file.
 ## Unreleased
 
 ### Added
-- **`network.allowAllUnixSockets` option in sandbox config** (`sandbox/backend.go`, `sandbox/config.go`) — opt-in flag, plumbed through to `srt-cowork`'s native `network.allowAllUnixSockets` field. When set in `~/.config/claude-cowork-service/sandbox.yaml`, sandboxed sessions can connect to host Unix sockets (Docker daemon, ssh-agent, etc.). Disabled by default for safety; the JSON tag uses `omitempty` so the field is only emitted when on, preserving SRT's secure default. The companion `allowUnixSockets` path-allowlist from upstream is intentionally not exposed because it is documented as macOS-only — Linux's seccomp cannot filter sockets by path, so the flag is all-or-nothing on this platform.
-
-### Fixed
-- `isProcessRunning` response now includes `exitCode` field alongside `running` — Desktop expects both fields for process health monitoring.
-- Mount path canonicalization on systems where `/home` is a symlink to `/var/home` (Fedora Silverblue, Bazzite, CoreOS, Universal Blue) — `resolveSubpath()` now resolves symlinks when the fast string prefix check fails, preventing doubled paths like `/var/home/user/home/user/...` (#40).
-- `hostAbsFromShared()` in VM backend no longer rejects valid paths as "outside home" on symlinked home systems.
-- `ReadFile()` home containment check in VM backend now uses canonicalized paths.
+- **Sandbox backend** (`-backend=sandbox`) — new `sandbox/` package wrapping spawned commands in the `srt-cowork` (sandbox-runtime) CLI for filesystem and network isolation. Selectable via `-backend=sandbox` flag or `COWORK_VM_BACKEND=sandbox` env var. Implements the same `Backend` interface as `native` and `kvm`; reuses native-style host execution but isolates each spawned process through `srt-cowork`.
+- **Sandbox config file** (`~/.config/claude-cowork-service/sandbox.yaml`) — YAML-based config with baseline filesystem rules (`denyRead`, `allowRead`, `allowWrite`). Auto-generates a sensible default on first run; per-session writable mounts and allowed domains are layered on top by the backend.
+- **`network.allowAllUnixSockets` config option** (`sandbox/backend.go`, `sandbox/config.go`) — opt-in flag plumbed through to `srt-cowork`'s native `network.allowAllUnixSockets` field. Lets sandboxed sessions connect to host Unix sockets (Docker daemon, ssh-agent, etc.). Defaults to `false`; JSON tag uses `omitempty` so the field is only emitted when on, preserving SRT's secure default. The companion `allowUnixSockets` path-allowlist from upstream is intentionally not exposed because it's documented as macOS-only — Linux's seccomp cannot filter sockets by path, so the flag is all-or-nothing on this platform.
+- **`sandbox-runtime` submodule** (`sandbox-runtime/`) — vendored fork of the upstream sandbox-runtime project, tracked as a git submodule. Built into the `srt-cowork` binary via `make build-srt`. Currently at upstream release 0.0.51.
+- **`make build-srt` target** — builds `srt-cowork` (bun-compiled executable with appended JavaScript payload) for the current platform and both Linux architectures.
+- **`srt-cowork` shipped in all packaging** — DEB, RPM, Arch (PKGBUILD), and Nix packages now install `srt-cowork` to `/usr/bin/srt-cowork` alongside `cowork-svc-linux`. GitHub Actions release workflow builds and uploads `srt-linux-amd64` / `srt-linux-arm64` plus SHA-256 checksums as release artifacts.
+- Documented 2 new session types: `scheduled` (cron tasks) and `radar` (restricted)
+- Documented 20+ new spawn environment variables passed through to CLI
+- Documented `mcp__cowork__propose_skills` in disallowed tools list
+- Upstream binary adds `vm/hostinfo.go` source and `github.com/anthropics/win-httpproxy` dependency
 
 ### Changed
-- **Upstream update to Claude Desktop v1.6608.2** — Three rebuild-only upstream releases (v1.6608.0 → v1.6608.1 → v1.6608.2). Protocol-level changes: `addApprovedOauthToken` simplified (Desktop now sends only `{token}`, the `name` field was removed); `spawn` no longer sends `mountConda` (Operon/Conda removed upstream); `startVM` gains optional `cpuCount` and `apiProbeURL` fields (ignored natively); `createDiskImage` RPC handler retained as no-op for backward compatibility. Reference docs (`COWORK_RPC_PROTOCOL.md`, `COWORK_SVC_BINARY.md`, `COWORK_VM_BUNDLE.md`, `CLAUDE.md`, `update-prompt.md`) updated to v1.6608.2.
-- **Extract scripts migrated from Squirrel (nupkg) to MSIX** — `scripts/extract-cowork-svc.sh` and `scripts/extract-vm-bundle.sh` now download the `.msix` package and use `7z` to extract from `app/resources/` directly (previously `lib/net45/resources/`), with a URL-decode pass for MSIX `%40` encoding.
+- **Updated upstream reference materials from Claude Desktop v1.6608.2 to v1.7196.0**
+- Desktop no longer sends `name` field in createVM, startVM, stopVM, isRunning, isGuestConnected, subscribeEvents RPC methods (our code already handles this via fallbacks)
+- `getDownloadStatus` RPC no longer sent over pipe (handled locally in Electron app; our handler remains as defensive no-op)
+- New `userDataRoot` field added to `configure` and `subscribeEvents` params (silently ignored by Go unmarshaller)
+- **Renamed `srt` binary to `srt-cowork`** across the entire codebase — GitHub workflows, sandbox tests, DEB/RPM/Arch/Nix packaging, install scripts, Makefile install paths, and the default `SRT` env var resolution in `main.go`. The longer name avoids conflicts with other `srt` binaries on user systems (notably the unrelated Secure Reliable Transport CLI).
+- **Native backend simplified** (`native/backend.go`, `native/process.go`) — removed extensive path remapping logic (`/sessions/<name>` ↔ host paths, `mnt/<mount>` rewriting), reverse mount remapping for outgoing MCP `control_request` messages, `mountRemap` / `reverseMountRemap` flags, and the local `mcp__cowork__present_files` interception. The native backend is now a thin host-execution layer; isolation and path semantics are delegated to the sandbox backend or skipped entirely on plain `native`.
+- **`Backend.Spawn` signature simplified** — removed unused parameters (`vmPrefix`, `reverseMountRemap`, `realPrefix`, etc.) that only made sense for the old VM-prefix world.
+- **RPC log filtering** (`pipe/handlers.go`) — replaced ad-hoc per-method checks with a `Handler.suppressRPCLog` set. Currently suppresses `isGuestConnected` and `isProcessRunning` keepalive pings from debug output so logs stay readable on busy sessions.
+
+### Fixed
+- **`srt-cowork` binary corruption across packaging** — `srt-cowork` is a `bun`-compiled executable with its JS payload appended to the end of the file; default strip / debug-split passes clip the appended payload and the binary degrades to vanilla `bun` (prints the bun help text on invocation). Disabled stripping in every packaging pipeline:
+  - **Nix** (`packaging/nix/package.nix`): `dontStrip = true`
+  - **Arch** (`PKGBUILD`, `packaging/arch/build-pkg.sh`): `options=('!strip' '!debug')`
+  - **RPM** (`packaging/rpm/claude-cowork-service.spec`): `%global __os_install_post %{nil}` to disable all post-install binary processing
+  - **CI** (`.github/workflows/build-and-release.yml`): post-build `srt-cowork --help` smoke check that fails the workflow if the binary has degraded to plain `bun`
+- **Nix build inputs for sandbox** (`packaging/nix/package.nix`) — fixed missing `yaml` / SRT input plumbing so the Nix build picks up the sandbox-runtime binary and `gopkg.in/yaml.v3` dependency consistently across CI and local builds.
 
 ### Removed
-- **Merged main into `feature/sandbox`** without bringing in PR #41 (graceful shutdown / pre-kill backup / session integrity check / `cowork-session-doctor` Python tool). These changes were incompatible with the simplified hostloop-only backend on this branch.
+- **PR #41 (graceful shutdown / pre-kill backup / session integrity check / `cowork-session-doctor` Python tool) intentionally not merged into `feature/sandbox`** — released on main as v1.0.56 ([@shmohammadi86](https://github.com/shmohammadi86)) but incompatible with the simplified hostloop-only backend on this branch.
+
+## 1.0.57 — 2026-05-14
+
+### Added
+- **OpenRC support for Artix Linux** ([#43](https://github.com/patrickjaja/claude-cowork-service/pull/43)) — `claude-cowork.openrc` init script mirrors the systemd user unit's behaviour: reads `COWORK_USER` from `/etc/conf.d/claude-cowork` and scrapes `WAYLAND_DISPLAY` / `DISPLAY` / `DBUS_SESSION_BUS_ADDRESS` / etc. from the user's session leader at start time so spawned Claude Code processes can reach the display.
+- **`claude-cowork.confd`** — documented config defaults consumed by the OpenRC init script.
+- **README Artix install section** — documents the install path and the sudoers rule needed for passwordless `rc-service` invocations.
+
+### Changed
+- **PKGBUILD `depends` / `optdepends` reorganised** — dropped `systemd` from hard `depends` (it ships in `base` on Arch); both `systemd` and `openrc` are now `optdepends`. The Makefile gained OpenRC file install/uninstall targets for source builds, and `backup=('etc/conf.d/claude-cowork')` was added so pacman preserves user edits to the conf.d file across upgrades.
+- **`claude-cowork-service.install`** — restart hook now handles both systemd and OpenRC when the service is running on upgrade.
+
+## 1.0.56 - 2026-05-11
+
+### Added
+- Graceful shutdown with pre-kill backup - `kill()` now sends SIGINT first and waits 3s for the Claude CLI to flush pending writes before escalating to SIGTERM; `StopVM()` snapshots the session directory before killing processes (keeps 5 most recent backups)
+- Startup integrity check for session JSONL files - on VM startup, scans the sessions directory for truncated/empty audit.jsonl files and logs warnings (does not auto-repair for safety)
+- Session doctor tool (`scripts/cowork-session-doctor/`) - Python CLI for diagnosing and repairing session JSONL files (diagnose, repair, extract, backup, validate commands)
+
+### Fixed
+- Broken pipe race condition on spawn - adds a `ready` channel to `localProcess` that waits for first stdout/stderr output (up to 5s) before writing stdin, preventing `failed to flush buffered stdin` errors when Desktop sends data immediately after spawn confirmation
+
+All changes in this section contributed by [@shmohammadi86](https://github.com/shmohammadi86) ([#41](https://github.com/patrickjaja/claude-cowork-service/pull/41)).
+
+## 1.0.55 - 2026-05-11
+
+### Fixed
+- `isProcessRunning` response now includes `exitCode` field alongside `running` - Desktop expects both fields for process health monitoring
+- Fix mount path canonicalization on systems where `/home` is a symlink to `/var/home` (Fedora Silverblue, Bazzite, CoreOS, Universal Blue) - `resolveSubpath()` now resolves symlinks when the fast string prefix check fails, preventing doubled paths like `/var/home/user/home/user/...` (#40)
+- Fix `hostAbsFromShared()` in VM backend incorrectly rejecting valid paths as "outside home" on symlinked home systems
+- Fix `ReadFile()` home containment check in VM backend to use canonicalized paths
+
+### Changed
+- Updated upstream reference materials to Claude Desktop v1.6608.1 (rebuild-only release - no protocol, handler, or VM bundle changes vs 1.6608.0)
+- Updated upstream reference materials to Claude Desktop v1.6608.2 (rebuild with new tcpproxy dependency in cowork-svc.exe - no protocol, handler, or VM bundle changes vs 1.6608.1)
+
+## 1.0.54 — 2026-05-07
+- **Upstream update to Claude Desktop v1.6608.0** (from v1.6259.0)
+- **Operon/Conda notebook engine completely removed from Desktop** - Massive internal refactoring that dropped the build size by approximately 3 MB. All conda-related code paths, the `createDiskImage` RPC method, and the `mountConda` spawn parameter are gone from the Desktop codebase.
+- **`createDiskImage` RPC removed** - Desktop no longer sends this method. Our no-op handler remains for backward compatibility.
+- **`spawn` no longer sends `mountConda` parameter** - The conda mount mode field was removed along with the Operon engine.
+- **`addApprovedOauthToken` simplified** - Desktop now sends only `{token}` (the `name` field was removed).
+- **`startVM` gains optional `cpuCount` and `apiProbeURL` fields** - New parameters for VM CPU allocation and API reachability probing. Ignored on native Linux.
+- **`isDebugLoggingEnabled` now handled locally by Desktop** - No longer sent over the pipe. Our handler remains for backward compatibility.
+- **New spawn env vars**: `CLAUDE_CODE_DISABLE_AGENTS_FLEET`, `CLAUDE_TMPDIR`
+- **Removed spawn env var**: `CLAUDE_OAUTH_CLIENT_SECRET`
+- **New locale**: id-ID.json (Indonesian) added to installer
+- **New JS files**: `coworkArtifact.js` (new version), `buddy.js` added to app.asar build artifacts
+- **Removed JS file**: `sqliteWorker.node.js` removed from app.asar
+- **VM bundle**: Unchanged - same SHA (`5680b11b...`), same file checksums (stable since v1.1.9669)
+- **Extract scripts migrated from Squirrel (nupkg) to MSIX** - The installer format changed from Squirrel (`lib/net45/resources/`) to MSIX (`app/resources/`). The extract scripts now use MSIX extraction, and `cowork-svc.exe` + `smol-bin.x64.vhdx` are properly extracted again (they were never removed - just moved to a different location in the installer package)
+- **Updated reference docs** - COWORK_RPC_PROTOCOL.md, COWORK_SVC_BINARY.md, COWORK_VM_BUNDLE.md, CLAUDE.md, update-prompt.md updated to v1.6608.0
+
+### Removed
+- **`createDiskImage` RPC method** - No longer sent by Desktop (Operon/Conda removed). Handler retained as no-op for backward compatibility.
+- **`mountConda` spawn parameter** - No longer sent by Desktop.
+- **`name` field from `addApprovedOauthToken`** - Desktop now sends only `{token}`.
 
 ## 1.0.53 — 2026-05-05
 

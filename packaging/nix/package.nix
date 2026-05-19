@@ -11,7 +11,7 @@
 }:
 
 let
-  packageVersion = "1.0.53";
+  packageVersion = "1.0.57";
   srtSystem =
     if stdenv.hostPlatform.isAarch64 then "aarch64-linux"
     else if stdenv.hostPlatform.isx86_64 then "x86_64-linux"
@@ -44,7 +44,7 @@ buildGoModule rec {
     owner = "patrickjaja";
     repo = "claude-cowork-service";
     rev = "v${version}";
-    hash = "sha256-rNFoTFNsZQOFYMJ3yli5rSCRx573o0HlO/PyrjskNIg=";
+    hash = "sha256-FbEbICnUIjvkofTK7wR9Wrfp3U1w1uXjBWDUCdRAlCQ=";
   };
 
   vendorHash = "sha256-g+yaVIx4jxpAQ/+WrGKxhVeliYx7nLQe/zsGpxV4Fn4=";
