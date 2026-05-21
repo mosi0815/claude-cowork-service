@@ -103,7 +103,7 @@ func defaultSandboxDenyRead() []string {
 		"/tmp",
 		"/var",
 		"/var/tmp",
-		filepath.ToSlash(filepath.Join("/run/user", fmt.Sprint(os.Getuid()))),
+		"/run",
 	}
 
 	allowedRootEntries := map[string]struct{}{
