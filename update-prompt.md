@@ -70,12 +70,18 @@ Copy-paste this into Claude Code when a new version is available:
 >
 > 4. Compare app.asar for protocol changes:
 >    ```bash
->    # Extract old and new app.asar for comparison
->    npx @electron/asar extract /tmp/app-asar-old.asar /tmp/app-asar-old
->    npx @electron/asar extract bin/app.asar /tmp/app-asar-new
+>    # Extract old index.js from asar (full extract fails due to native modules)
+>    NODE_PATH=~/.npm-global/lib/node_modules node -e "
+>    const asar = require('@electron/asar');
+>    const fs = require('fs');
+>    const content = asar.extractFile('/tmp/app-asar-old.asar', '.vite/build/index.js');
+>    fs.writeFileSync('/tmp/app-asar-old-index.js', content);
+>    console.log('Extracted', content.length, 'bytes');
+>    "
+>    # New version is already extracted by extract-vm-bundle.sh
 >    # Check for RPC method changes in the TypeScript VM client
->    diff <(rg -o 'method:"[^"]*"' /tmp/app-asar-old/app/.vite/build/index.js | sort -u) \
->         <(rg -o 'method:"[^"]*"' /tmp/app-asar-new/app/.vite/build/index.js | sort -u)
+>    diff <(rg -o 'method:"[^"]*"' /tmp/app-asar-old-index.js | sort -u) \
+>         <(rg -o 'method:"[^"]*"' vm-bundle/app-asar-extracted/.vite/build/index.js | sort -u)
 >    ```
 >
 > 5. Compare VM bundle config:
@@ -101,49 +107,55 @@ Copy-paste this to analyze what changed in the Electron app between two versions
 > **Compare Claude Desktop protocol changes between old and new version.**
 >
 > Prerequisites:
-> - Old app.asar extracted: `/tmp/app-asar-old/` (or use `vm-bundle/app-asar-extracted/` from previous version)
-> - New app.asar extracted: `vm-bundle/app-asar-extracted/`
+> - Old index.js extracted: `/tmp/app-asar-old-index.js` (single file, see extraction below)
+> - New app.asar extracted: `vm-bundle/app-asar-extracted/` (done by extract-vm-bundle.sh)
 >
-> If not extracted yet:
+> If old index.js not extracted yet (full extract fails due to native modules):
 > ```bash
-> npx @electron/asar extract /tmp/app-asar-old.asar /tmp/app-asar-old
+> NODE_PATH=~/.npm-global/lib/node_modules node -e "
+> const asar = require('@electron/asar');
+> const fs = require('fs');
+> const content = asar.extractFile('/tmp/app-asar-old.asar', '.vite/build/index.js');
+> fs.writeFileSync('/tmp/app-asar-old-index.js', content);
+> console.log('Extracted', content.length, 'bytes');
+> "
 > ```
 >
 > Run these comparisons:
 >
 > 1. **Cowork-related code changes:**
 >    ```bash
->    diff <(rg -o '.{0,60}cowork.{0,60}' /tmp/app-asar-old/app/.vite/build/index.js | sort -u) \
->         <(rg -o '.{0,60}cowork.{0,60}' vm-bundle/app-asar-extracted/app/.vite/build/index.js | sort -u)
+>    diff <(rg -o '.{0,60}cowork.{0,60}' /tmp/app-asar-old-index.js | sort -u) \
+>         <(rg -o '.{0,60}cowork.{0,60}' vm-bundle/app-asar-extracted/.vite/build/index.js | sort -u)
 >    ```
 >
 > 2. **RPC method registrations (TypeScript VM client):**
 >    ```bash
->    diff <(rg -o '.{0,40}(configure|createVM|startVM|stopVM|spawn|kill|writeStdin|subscribeEvents|mountPath|readFile|installSdk|isRunning|isGuestConnected|isProcessRunning|getDownloadStatus|setDebugLogging|addApprovedOauthToken).{0,40}' /tmp/app-asar-old/app/.vite/build/index.js | sort -u) \
->         <(rg -o '.{0,40}(configure|createVM|startVM|stopVM|spawn|kill|writeStdin|subscribeEvents|mountPath|readFile|installSdk|isRunning|isGuestConnected|isProcessRunning|getDownloadStatus|setDebugLogging|addApprovedOauthToken).{0,40}' vm-bundle/app-asar-extracted/app/.vite/build/index.js | sort -u)
+>    diff <(rg -o '.{0,40}(configure|createVM|startVM|stopVM|spawn|kill|writeStdin|subscribeEvents|mountPath|readFile|installSdk|isRunning|isGuestConnected|isProcessRunning|getDownloadStatus|setDebugLogging|addApprovedOauthToken).{0,40}' /tmp/app-asar-old-index.js | sort -u) \
+>         <(rg -o '.{0,40}(configure|createVM|startVM|stopVM|spawn|kill|writeStdin|subscribeEvents|mountPath|readFile|installSdk|isRunning|isGuestConnected|isProcessRunning|getDownloadStatus|setDebugLogging|addApprovedOauthToken).{0,40}' vm-bundle/app-asar-extracted/.vite/build/index.js | sort -u)
 >    ```
 >
 > 3. **New RPC methods (look for method dispatch patterns):**
 >    ```bash
->    rg 'method.*:.*"[a-z]' vm-bundle/app-asar-extracted/app/.vite/build/index.js | grep -v '//' | head -50
+>    rg 'method.*:.*"[a-z]' vm-bundle/app-asar-extracted/.vite/build/index.js | grep -v '//' | head -50
 >    ```
 >
 > 4. **Spawn parameter changes:**
 >    ```bash
->    diff <(rg -o '.{0,80}spawn.{0,80}' /tmp/app-asar-old/app/.vite/build/index.js | sort -u) \
->         <(rg -o '.{0,80}spawn.{0,80}' vm-bundle/app-asar-extracted/app/.vite/build/index.js | sort -u)
+>    diff <(rg -o '.{0,80}spawn.{0,80}' /tmp/app-asar-old-index.js | sort -u) \
+>         <(rg -o '.{0,80}spawn.{0,80}' vm-bundle/app-asar-extracted/.vite/build/index.js | sort -u)
 >    ```
 >
 > 5. **Event type changes:**
 >    ```bash
->    diff <(rg -o '.{0,40}(vmStarted|vmStopped|apiReachability|startupStep|stdout|stderr|exit).{0,40}' /tmp/app-asar-old/app/.vite/build/index.js | sort -u) \
->         <(rg -o '.{0,40}(vmStarted|vmStopped|apiReachability|startupStep|stdout|stderr|exit).{0,40}' vm-bundle/app-asar-extracted/app/.vite/build/index.js | sort -u)
+>    diff <(rg -o '.{0,40}(vmStarted|vmStopped|apiReachability|startupStep|stdout|stderr|exit).{0,40}' /tmp/app-asar-old-index.js | sort -u) \
+>         <(rg -o '.{0,40}(vmStarted|vmStopped|apiReachability|startupStep|stdout|stderr|exit).{0,40}' vm-bundle/app-asar-extracted/.vite/build/index.js | sort -u)
 >    ```
 >
 > 6. **Session/dispatch changes:**
 >    ```bash
->    diff <(rg -o '.{0,60}(dispatch|ditto|session_type|CLAUDE_CODE_TAGS|CLAUDE_CODE_BRIEF|disallowedTools|present_files).{0,60}' /tmp/app-asar-old/app/.vite/build/index.js | sort -u) \
->         <(rg -o '.{0,60}(dispatch|ditto|session_type|CLAUDE_CODE_TAGS|CLAUDE_CODE_BRIEF|disallowedTools|present_files).{0,60}' vm-bundle/app-asar-extracted/app/.vite/build/index.js | sort -u)
+>    diff <(rg -o '.{0,60}(dispatch|ditto|session_type|CLAUDE_CODE_TAGS|CLAUDE_CODE_BRIEF|disallowedTools|present_files).{0,60}' /tmp/app-asar-old-index.js | sort -u) \
+>         <(rg -o '.{0,60}(dispatch|ditto|session_type|CLAUDE_CODE_TAGS|CLAUDE_CODE_BRIEF|disallowedTools|present_files).{0,60}' vm-bundle/app-asar-extracted/.vite/build/index.js | sort -u)
 >    ```
 >
 > For each finding, classify as:
@@ -165,7 +177,7 @@ Run this on EVERY version update to verify our implementation still matches:
 >    # Our methods:
 >    rg 'case "' pipe/handlers.go
 >    # Desktop's method calls (from app.asar):
->    rg -o 'method:"[^"]*"' vm-bundle/app-asar-extracted/app/.vite/build/index.js | sort -u
+>    rg -o 'method:"[^"]*"' vm-bundle/app-asar-extracted/.vite/build/index.js | sort -u
 >    ```
 >
 > 2. Check spawn parameter handling:

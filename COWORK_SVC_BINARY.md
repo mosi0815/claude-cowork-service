@@ -1,4 +1,4 @@
-# Cowork Service Binary Analysis - v1.8089.0
+# Cowork Service Binary Analysis - v1.8555.2
 
 ## Binary Overview
 
@@ -101,7 +101,7 @@ Claude Desktop (Electron, patched)
 
 ---
 
-## cowork-svc.exe Deep Analysis (last version: v1.8089.0)
+## cowork-svc.exe Deep Analysis (last version: v1.8555.2)
 
 > **NOTE:** In v1.6259.0 the installer switched from Squirrel (nupkg) to MSIX, moving cowork-svc.exe from `lib/net45/resources/` to `app/resources/`. The binary was never removed - our extract scripts now use MSIX extraction. The analysis below covers the binary as extracted from the current MSIX package. The pipe protocol is unchanged - the TypeScript client in `index.js` still connects to `\\.\pipe\cowork-vm-service` and sends the same RPC methods.
 
@@ -109,12 +109,12 @@ Claude Desktop (Electron, patched)
 |----------|-------|
 | **File type** | PE32+ executable for MS Windows 6.01 (console), x86-64, 8 sections |
 | **Go version** | go1.24.13 |
-| **Module** | github.com/anthropics/cowork-win32-service (v0.0.0-20260519051444-ffa892bf99d5+dirty) |
-| **Build date** | 2026-05-19 |
+| **Module** | github.com/anthropics/cowork-win32-service (v0.0.0-20260522230437-a476c316c741+dirty) |
+| **Build date** | 2026-05-22 |
 | **Size** | 12,649,808 bytes |
-| **SHA256** | 3f830babed5cc0a9faa708ea9757395cfa27cd0c903125419d467bc2b9e7dd27 |
-| **VCS revision** | ffa892bf99d5831e4d234026b742081cd8615f83 |
-| **Build timestamp** | 2026-05-19T05:14:44Z |
+| **SHA256** | 634139e8b39f3ed8152da33d98178c352eeb4ecfc77dab518b4ef9d68de2f56c |
+| **VCS revision** | a476c316c741715263e34f9c9d2bc45b6d0f21c7 |
+| **Build timestamp** | 2026-05-22T23:04:37Z |
 | **Last Squirrel version** | v1.5354.0 (nupkg) |
 | **MSIX since** | v1.6259.0 (moved to `app/resources/`) |
 
@@ -268,17 +268,17 @@ Three packages: `main`, `pipe`, `vm`
 
 ---
 
-## bin/ Directory Checksums (v1.8089.0)
+## bin/ Directory Checksums (v1.8555.2)
 
 Extracted from MSIX package (`app/resources/`). In v1.6259.0 the installer switched from Squirrel nupkg to MSIX - files moved but were not removed.
 
 | File | SHA256 | Size | Notes |
 |------|--------|------|-------|
-| cowork-svc.exe | 3f830babed5cc0a9faa708ea9757395cfa27cd0c903125419d467bc2b9e7dd27 | 12,649,808 bytes | Present - moved to MSIX in v1.6259.0 |
-| chrome-native-host.exe | 543d104fd1dbb2bc06cf9009d007d4a5b8a4774e0cfd1a8b15b60a8a16f290c9 | 1,012,560 bytes | Present |
-| smol-bin.x64.vhdx | fafa1b6387a4f97795c2ec2f532d094a0557f1e180fc82057e52c202e1fab425 | 37,748,736 bytes | Present - moved to MSIX in v1.6259.0 |
+| cowork-svc.exe | 634139e8b39f3ed8152da33d98178c352eeb4ecfc77dab518b4ef9d68de2f56c | 12,649,808 bytes | Present - moved to MSIX in v1.6259.0 |
+| chrome-native-host.exe | ef6492cbb2c8d3a5764c9bd280d8f16d2e2eafa4d49541c68598d060379605a6 | 1,012,560 bytes | Present |
+| smol-bin.x64.vhdx | ab481c4fb93ced0a54734f64250c4475532a4b87482e1fc67f0795b93dc22a60 | 37,748,736 bytes | Present - moved to MSIX in v1.6259.0 |
 | cowork-plugin-shim.sh | N/A | N/A | Not found in MSIX (may have moved elsewhere) |
-| app.asar | ad2e31336d027b6e19cf41b769b21ca924b4cb1c0ba5d3990190978d56a0f1af | ~25 MB | Present, updated to v1.8089.0 |
+| app.asar | 66a1b3f156709cb806ade0d40a014ea2d2fe8ee26a11f99906c4001cc069d741 | ~25 MB | Present, updated to v1.8555.2 |
 
 ---
 
@@ -286,8 +286,8 @@ Extracted from MSIX package (`app/resources/`). In v1.6259.0 the installer switc
 
 | Property | Value |
 |----------|-------|
-| **Package** | @ant/desktop v1.8089.0 |
-| **Electron** | 41.3.0 |
+| **Package** | @ant/desktop v1.8555.2 |
+| **Electron** | 41.6.1 |
 | **Node requirement** | >=22.0.0 |
 | **Sentry release** | (verify on extraction) |
 | **IPC UUID** | (verify on extraction) |
@@ -323,6 +323,19 @@ Extracted from MSIX package (`app/resources/`). In v1.6259.0 the installer switc
 - **Artifact lifecycle** — New telemetry events: `cowork_artifacts_created`, `cowork_artifacts_updated`, `cowork_artifacts_imported`, `cowork_artifacts_exported`
 - **IPC UUID change** — Internal Electron IPC bridge UUID changed (no protocol impact)
 - **SDK versions unchanged** — Same Electron 40.8.5, same claude-agent-sdk versions
+
+### New in v1.8555.2
+
+- **cowork-svc.exe**: Rebuild with same size (12,649,808 bytes). Same Go version (go1.24.13). New SHA256 `634139e8b39f3ed8152da33d98178c352eeb4ecfc77dab518b4ef9d68de2f56c`. VCS revision `a476c316c741715263e34f9c9d2bc45b6d0f21c7`, build timestamp `2026-05-22T23:04:37Z`. Dirty build (`vcs.modified=true`). No new handler functions, no new Go source files.
+- **No protocol changes** - All 21 active methods, 9 event types, wire format unchanged. Binary is a rebuild only - same Go module, same handler set, same size.
+- **chrome-native-host.exe**: Rebuilt. New SHA256 `ef6492cbb2c8d3a5764c9bd280d8f16d2e2eafa4d49541c68598d060379605a6`. Same size (1,012,560 bytes).
+- **smol-bin.x64.vhdx**: Rebuilt. New SHA256 `ab481c4fb93ced0a54734f64250c4475532a4b87482e1fc67f0795b93dc22a60`. Same size (37,748,736 bytes).
+- **app.asar**: Updated to v1.8555.2 (~25 MB). Electron 41.6.1 (unchanged). Agent SDK 0.3.149 (was 0.3.142), with 0.3.150-dev future. Anthropic SDK ^0.70.0.
+- **New spawn env vars** (pass through transparently): `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, plus 9 `VERTEX_REGION_CLAUDE_*` region vars.
+- **Artifact system** - New `CoworkArtifacts` class with artifact MCP tools (`list_artifacts`, `read_widget_context`, `create_artifact`, `update_artifact`). Entirely Electron-internal - artifacts are rendered in dedicated `WebContentsView` instances. Zero wire impact on the Go daemon.
+- **New Desktop-internal MCP tools**: `archive_session`, `search_session_transcripts`, `list_connectors`, `list_plugins`, `suggest_skills` - all handled within the Electron process, no pipe traffic.
+- **BRIDGE_DISALLOWED_TOOLS expanded**: `mcp__cowork__create_artifact` and `mcp__cowork__update_artifact` added to the dispatch/bridge disallowed list.
+- **VM bundle**: Unchanged - same SHA `5680b11bcdab215cccf07e0c0bd1bd9213b0c25d`.
 
 ### New in v1.8089.0
 

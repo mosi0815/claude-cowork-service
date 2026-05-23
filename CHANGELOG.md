@@ -5,12 +5,17 @@ All notable changes to claude-cowork-service will be documented in this file.
 ## Unreleased
 
 ### Changed
-- Updated upstream reference materials from Claude Desktop v1.7196.0 to v1.8089.0
+- Updated upstream reference materials from Claude Desktop v1.7196.0 to v1.8555.2
 - `installSdk` RPC params changed from `{name}` to `{sdkSubpath, version}` upstream (our handler is a no-op, no functional impact; struct already had the new fields)
 - `handleCreateDiskImage` and `SetCondaDiskPath` removed from upstream binary strings (our no-op handlers remain for backward compatibility)
-- Electron 41.3.0 -> 41.6.1, Agent SDK 0.2.128 -> 0.3.142
-- New spawn env vars passed through transparently: `CLAUDE_CODE_HOST_PLATFORM`, `TZ`, `ENABLE_PROMPT_CACHING_1H`, `CLAUDE_CODE_SUBAGENT_MODEL`
+- Electron 41.6.1 (unchanged from v1.8089.0), Agent SDK 0.3.142 -> 0.3.149
+- New spawn env vars passed through transparently (v1.8089.0): `CLAUDE_CODE_HOST_PLATFORM`, `TZ`, `ENABLE_PROMPT_CACHING_1H`, `CLAUDE_CODE_SUBAGENT_MODEL`
+- New spawn env vars passed through transparently (v1.8555.2): `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS`, `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, plus 9 `VERTEX_REGION_CLAUDE_*` region vars
 - `--cowork` CLI flag added by plugin system for sub-commands only (not main session spawn)
+- New client-side stdin backpressure handling: Desktop retries with error code `-32002` from `process.stdin` instead of failing (no Go changes needed)
+- New artifact system (Electron-internal, zero wire impact on Go daemon)
+- New Desktop-internal MCP tools: `archive_session`, `search_session_transcripts`, `list_connectors`, `list_plugins`, `suggest_skills`
+- `BRIDGE_DISALLOWED_TOOLS` expanded: `mcp__cowork__create_artifact`, `mcp__cowork__update_artifact` added
 - VM bundle unchanged - same SHA `5680b11bcdab215cccf07e0c0bd1bd9213b0c25d` since v1.1.9669
 
 ## 1.0.57 — 2026-05-14

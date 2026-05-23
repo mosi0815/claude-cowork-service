@@ -1,4 +1,4 @@
-# Cowork VM Bundle Reference - v1.8089.0
+# Cowork VM Bundle Reference - v1.8555.2
 
 > Re-validate on every upstream Claude Desktop version update.
 
@@ -11,7 +11,7 @@
 
 ## Current Config (v1.2.234)
 
-> **Note:** The VM bundle SHA and all file checksums have been unchanged since v1.1.9669, stable across all versions through v1.8089.0. Only the Claude Desktop version changed.
+> **Note:** The VM bundle SHA and all file checksums have been unchanged since v1.1.9669, stable across all versions through v1.8555.2. Only the Claude Desktop version changed.
 
 - **SHA:** `5680b11bcdab215cccf07e0c0bd1bd9213b0c25d`
 - **Platforms:** darwin (arm64, x64), win32 (arm64, x64)
