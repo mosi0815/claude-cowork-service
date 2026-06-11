@@ -1,4 +1,4 @@
-# Cowork VM Bundle Reference - v1.8555.2
+# Cowork VM Bundle Reference - v1.12603.0
 
 > Re-validate on every upstream Claude Desktop version update.
 
@@ -9,40 +9,40 @@
 - VM images are downloaded from Anthropic CDN on first use
 - URL pattern: `https://downloads.claude.ai/vms/linux/<arch>/<sha>/<filename>.zst`
 
-## Current Config (v1.2.234)
+## Current Config (v1.12603.0)
 
-> **Note:** The VM bundle SHA and all file checksums have been unchanged since v1.1.9669, stable across all versions through v1.8555.2. Only the Claude Desktop version changed.
+> **Note:** The VM bundle SHA changed in v1.12603.0 (previously `5680b11bcdab215cccf07e0c0bd1bd9213b0c25d`, unchanged since v1.1.9669). All VM images are new and every file checksum changed. Checksums are SHA256 of the compressed/downloaded artifacts (e.g. the `.zst` files for win32).
 
-- **SHA:** `5680b11bcdab215cccf07e0c0bd1bd9213b0c25d`
+- **SHA:** `6d1538ba6fecc4e5c5583993c4b30bb1875f0f5a`
 - **Platforms:** darwin (arm64, x64), win32 (arm64, x64)
 
 **darwin/arm64:**
 
 | File | Checksum (SHA256) |
 |------|------------------|
-| rootfs.img | cb93e2748afd6022bcae48db01776d4ad4308ca8c0ea54bd2af48b1aeed8a242 |
+| rootfs.img | f40e54e816c94625497b37e477a1d70fcdf980f1f0acc166b666a214083e1e00 |
 
 **darwin/x64:**
 
 | File | Checksum |
 |------|----------|
-| rootfs.img | e2087478e3972f200da883b1df824efb966a08b927f3fc021a32844b594d7033 |
+| rootfs.img | bc64e0dbc039c30ce986ad3edd2d0cb38d57d78450be72b3a5d4e747c54bf482 |
 
 **win32/arm64:**
 
 | File | Checksum | Progress |
 |------|----------|----------|
-| rootfs.vhdx | de737aae0dcb87f8d05de8ea62ac4912a13654457399083c36b860fbacf6bd6a | 0-80% |
-| vmlinuz | fee2a6d7c7a515f1a1e5bccf0c05d644edd335d2db8ac67262e1b6f398bdd98c | 80-90% |
-| initrd | cff623392ed50464391392526246a6d7b3d727d9dddded1010c2db260f284922 | 90-100% |
+| rootfs.vhdx | 72f2d52d222a37fda5b72b3ee5a8b5448c2291b6462ed749428b72b892e87313 | 0-80% |
+| vmlinuz | 588bfd1dd60cd7f17d3ae8da3e83ed319904075f8a290436e4d21cff6e00c963 | 80-90% |
+| initrd | cb36d01104cc208c8404a631bdf4c0d4782b52b516a9573060e78f684dbf636a | 90-100% |
 
 **win32/x64:**
 
 | File | Checksum | Progress |
 |------|----------|----------|
-| rootfs.vhdx | 75ede0ee2b78517edcee01f8702fae14ec3c08263b1478b5edc7622f00c24f92 | 0-80% |
-| vmlinuz | 143f6e61fd2ea05fe631d3b8fb59879a28d7fba00f1e5be5ebcb1f0040e9980c | 80-90% |
-| initrd | a06d6301ef16479535b0a570b7cdc56c6c25fa4d9813a4c2385cc58b314c51f3 | 90-100% |
+| rootfs.vhdx | 21237ca86d15885ed7dcbe1c66b8b3a464c914648b16300070b12b1e1212e451 | 0-80% |
+| vmlinuz | 1bb4bc3aa0c0c797a2ca6134d2b7034a196e05d4deea7bb20f064ee353781f3b | 80-90% |
+| initrd | 20214efcd451b3b74dc53ed80218c6e616bb2a101cafb18bc2c9bc91e559926b | 90-100% |
 
 ## File Descriptions
 
@@ -62,12 +62,12 @@
 
 ```
 vm-bundle/
-├── rootfs.vhdx.zst          (2.2 GB compressed)
+├── rootfs.vhdx.zst          (1.3 GB compressed, was 2.2 GB before v1.12603.0)
 ├── vmlinuz.zst              (15 MB compressed)
-├── initrd.zst               (166 MB compressed)
+├── initrd.zst               (71 MB compressed, was 166 MB before v1.12603.0)
 ├── vm-bundle-config.json    (parsed from app.asar JS)
 ├── app-asar-extracted/      (full Electron app for investigation)
-└── .version                 (Claude Desktop version, e.g. "1.2.234")
+└── .version                 (Claude Desktop version, e.g. "1.12603.0")
 ```
 
 ## How to Parse Config from JS
@@ -75,7 +75,7 @@ vm-bundle/
 The config is embedded as a minified object in index.js:
 
 ```javascript
-const qn = {sha:"5680b11...",files:{darwin:{arm64:[{name:"rootfs.img",checksum:"...",progressStart:0,progressEnd:100}],...},...}}
+const qn = {sha:"6d1538b...",files:{darwin:{arm64:[{name:"rootfs.img",checksum:"...",progressStart:0,progressEnd:100}],...},...}}
 ```
 
 The extract script finds it with regex: `{sha:"[a-f0-9]{40}",files:{`
@@ -89,7 +89,7 @@ The extract script finds it with regex: `{sha:"[a-f0-9]{40}",files:{`
 
 ---
 
-## VM Rootfs Deep Dive (v1.1.9493 — needs re-validation for v1.2.234)
+## VM Rootfs Deep Dive (last verified at v1.1.9493 - needs re-validation for v1.12603.0; not performed for this update, all-new images)
 
 ### Base System
 
@@ -216,6 +216,8 @@ Key installed packages: build-essential, curl, ffmpeg, gcc-11, ghostscript, git,
 
 | Claude Desktop Version | VM Bundle SHA | Notable Changes |
 |----------------------|--------------|-----------------|
+| 1.12603.0 | 6d1538ba6fecc4e5c5583993c4b30bb1875f0f5a | New VM images - SHA and all file checksums changed (first change since v1.1.9669). Images much smaller: rootfs.vhdx.zst 2.2 GB -> 1.3 GB, initrd.zst 166 MB -> 71 MB. Config structure unchanged. Rootfs deep dive not yet performed |
+| 1.8555.2 | 5680b11bcdab215cccf07e0c0bd1bd9213b0c25d | No VM bundle changes; identical config and images to previous versions since v1.1.9669 |
 | 1.8089.0 | 5680b11bcdab215cccf07e0c0bd1bd9213b0c25d | No VM bundle changes; identical config and images to previous versions since v1.1.9669 |
 | 1.7196.0 | 5680b11bcdab215cccf07e0c0bd1bd9213b0c25d | No VM bundle changes; identical config and images to previous versions since v1.1.9669 |
 | 1.6608.2 | 5680b11bcdab215cccf07e0c0bd1bd9213b0c25d | No VM bundle changes; identical config and images to 1.6608.0 |

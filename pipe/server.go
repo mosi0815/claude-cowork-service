@@ -1,6 +1,7 @@
 package pipe
 
 import (
+	"encoding/json"
 	"log"
 	"net"
 	"os"
@@ -166,6 +167,23 @@ func (s *Server) handleConnection(conn net.Conn) {
 			return
 		}
 
-		handler.Handle(conn, payload)
+		// subscribeEvents takes ownership of the connection: its handler
+		// streams events and reads until the client disconnects, so it must
+		// run synchronously as the sole reader.
+		var probe struct {
+			Method string `json:"method"`
+		}
+		if err := json.Unmarshal(payload, &probe); err == nil && probe.Method == "subscribeEvents" {
+			handler.Handle(conn, payload)
+			return
+		}
+
+		// Desktop (since v1.12603.0) multiplexes all RPCs over one persistent
+		// connection. Dispatch concurrently so a slow handler (e.g. kill's 1s
+		// delay, stopVM's session backup) doesn't stall unrelated in-flight
+		// requests toward the client's 30s timeout. WriteMessage frames each
+		// response in a single conn.Write, so concurrent responses can't
+		// interleave.
+		go handler.Handle(conn, payload)
 	}
 }

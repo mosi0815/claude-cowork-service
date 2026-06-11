@@ -1,4 +1,4 @@
-# Cowork RPC Protocol Reference - v1.8555.2
+# Cowork RPC Protocol Reference - v1.12603.0
 
 > **This document is the single source of truth for the protocol between Claude Desktop and cowork-svc.**
 > Re-validate on every upstream Claude Desktop version update.
@@ -8,7 +8,7 @@
 ## Table of Contents
 
 - [Wire Protocol](#wire-protocol)
-- [RPC Methods (21 active, 1 removed)](#rpc-methods-21-active-1-removed)
+- [RPC Methods (22 active, 1 removed)](#rpc-methods-22-active-1-removed)
 - [Event Types (9 total)](#event-types-9-total)
 - [Protocol Discoveries](#protocol-discoveries)
 - [Linux-Specific Adaptations](#linux-specific-adaptations)
@@ -27,7 +27,11 @@
 
 **Socket permissions:** `0700` (owner read/write/execute only)
 
-**Connection model:** Claude Desktop opens multiple concurrent connections to the socket. Each connection handles one request/response at a time, except for `subscribeEvents` which holds the connection open for streaming.
+**Connection model:** Since v1.12603.0, Claude Desktop multiplexes ALL RPCs over one persistent connection by default. Requests carry incrementing numeric `id`s, and each request has a 30-second timeout (remote-config overridable on the Desktop side). The old per-request connection model still exists Desktop-side but only behind a fallback feature flag. Events still use a second dedicated connection (`subscribeEvents`), which holds its connection open for streaming.
+
+Because multiple requests can be in flight on one connection, the Linux daemon dispatches requests concurrently per connection (`pipe/server.go`) so slow handlers do not stall other in-flight RPCs. `subscribeEvents` still owns its connection synchronously. Responses are matched to requests by `id`, not by ordering.
+
+**Pre-v1.12603.0 model (for reference):** Claude Desktop opened multiple concurrent connections to the socket. Each connection handled one request/response at a time, except for `subscribeEvents` which held the connection open for streaming.
 
 ### Request Format
 
@@ -67,7 +71,7 @@ Unknown method names receive a success response with `null` result (passthrough 
 
 ---
 
-## RPC Methods (21 active, 1 removed)
+## RPC Methods (22 active, 1 removed)
 
 ### 1. `configure`
 
@@ -89,7 +93,7 @@ Accepts VM resource configuration. On native Linux, values are logged but ignore
 - `sessionOnly` (boolean, optional): When `true`, indicates this is a fire-and-forget on-connect initialization call (no VM configuration needed). Desktop sends `configure({userDataName: "Claude", sessionOnly: true})` immediately on pipe connect since v1.4758.0. See Discovery #13.
 
 **New optional fields (v1.7196.0):**
-- `userDataRoot` (string, optional): The root path of the Electron user data directory. Sent alongside `userDataName`.
+- `userDataRoot` (string, optional): The root path of the Electron user data directory (dirname of Electron `userData`, or `CLAUDE_USER_DATA_DIR`). Sent alongside `userDataName`. As of v1.12603.0, Desktop reliably sends this field. The Linux daemon parses and ignores it (single-profile).
 
 **Response:** `null`
 
@@ -235,7 +239,8 @@ Spawns a command as a child process. This is the most complex method in the prot
   "isResume": boolean,
   "allowedDomains": [string],
   "oneShot": boolean,
-  "mountSkeletonHome": boolean
+  "mountSkeletonHome": boolean,
+  "oauthToken": string
 }
 ```
 
@@ -247,6 +252,9 @@ Spawns a command as a child process. This is the most complex method in the prot
 
 **Removed fields (v1.6608.0):**
 - `mountConda` (string) - Removed. Conda/Operon notebook engine was completely removed from Claude Desktop.
+
+**New fields (v1.12603.0):**
+- `oauthToken` (string, optional): The OAuth token for the session, set from `env.CLAUDE_CODE_OAUTH_TOKEN`. Sent in addition to the still-present `addApprovedOauthToken` call that precedes spawn. The Linux daemon parses it (`spawnParams.OauthToken`) and logs its presence, but functionally ignores it -- the token reaches the CLI via the environment on native Linux.
 
 **New additionalMounts entries (v1.2.234):**
 - `.cowork-lib` (mode `"ro"`): Plugin shim library directory. Contains `shim.sh` sourced by plugin shims for token validation, permission gating, and arch-aware binary dispatch.
@@ -299,14 +307,24 @@ These mounts are only present when plugins are configured for the session. On na
 - `CLAUDE_CODE_DISABLE_CRON` - `"1"` or `""`, conditionally disables cron support
 - `CLAUDE_CODE_ADDITIONAL_DIRECTORIES_CLAUDE_MD` - `"1"`, feature flag to enable additional CLAUDE.md directories
 
+**New spawn `env` variables (v1.12603.0):**
+- `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` - now hardcoded to `"1"` (was a pass-through variable in v1.8555.2)
+- `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK` - conditional `"1"`, disables refusal fallback
+- `ANTHROPIC_CUSTOM_HEADERS` - now populated with `anthropic-client-platform` / `anthropic-client-version` headers
+- `CLAUDE_CODE_OAUTH_SCOPES` - OAuth scopes for the session token
+
 All spawn `env` variables are passed through transparently to the spawned process on native Linux.
 
 **Response:**
 ```json
 {
-  "id": "process-id"
+  "id": "process-id",
+  "failedMounts": [string]
 }
 ```
+
+**New response fields (v1.12603.0):**
+- `failedMounts` (array of mount names): Mounts that failed to attach. Desktop reads `result.failedMounts` (tolerates missing/null, defaults to `[]`) and feeds it into confirmSpawn/telemetry/UI. The Linux daemon returns `"failedMounts": []` alongside `"id"` -- the native backend fails the whole spawn on mount errors, so a successful response implies no mounts failed.
 
 **IMPORTANT:** The command field is `"command"`, NOT `"cmd"`. The process ID field in params is `"id"`, NOT `"processId"`. See Discoveries #1 and #2.
 
@@ -532,6 +550,8 @@ Queries the current debug logging state.
 
 **Changed in v1.6608.0:** Desktop now handles this locally and no longer sends this RPC over the pipe. Our handler remains for backward compatibility.
 
+**Confirmed in v1.12603.0:** Debug logging state is now tracked entirely client-side. Desktop still does not call this method.
+
 ---
 
 ### 17. `subscribeEvents`
@@ -553,7 +573,7 @@ Subscribes to the event stream for a VM/session. This is a long-lived connection
 - `userDataName` (string, optional): The Electron user data directory name (e.g., `"Claude"`). Sent by Desktop since v1.4758.0.
 
 **New optional fields (v1.7196.0):**
-- `userDataRoot` (string, optional): The root path of the Electron user data directory. Sent alongside `userDataName`.
+- `userDataRoot` (string, optional): The root path of the Electron user data directory (dirname of Electron `userData`, or `CLAUDE_USER_DATA_DIR`). Sent alongside `userDataName`. As of v1.12603.0, Desktop reliably sends this field. The Linux daemon parses and ignores it (single-profile).
 
 **Response (initial acknowledgment):**
 ```json
@@ -593,6 +613,8 @@ Returns the download/readiness status of the VM bundle.
 **Native Linux behavior:** Always returns `"ready"` since there is no VM bundle to download.
 
 **Changed in v1.7196.0:** Desktop now handles download status locally in the Electron app and no longer sends this RPC over the pipe. Our handler remains as a defensive no-op for backward compatibility.
+
+**Confirmed in v1.12603.0:** Download status is now a Desktop-local Electron IPC handler, not a pipe RPC. Desktop still does not call this method.
 
 ---
 
@@ -653,6 +675,8 @@ Deletes session directories to free disk space. Called by Desktop's janitor when
 
 **Removed in v1.6608.0:** The Operon/Conda notebook engine was completely removed from Claude Desktop. Desktop no longer sends this RPC. Our handler remains as a no-op for backward compatibility.
 
+**Confirmed in v1.12603.0:** Desktop still does not call this method.
+
 **Params:**
 ```json
 {
@@ -692,6 +716,46 @@ Delivers a host response back to a VM guest process. Used by the plugin permissi
 **Native Linux behavior:** No-op. On native Linux, the plugin permission bridge uses the filesystem directly (shims write to `.cowork-perm-req/`, host writes responses to `.cowork-perm-resp/`). In VM mode, this RPC delivers responses over vsock.
 
 **Added in:** v1.569.0
+
+---
+
+### 23. `pruneSessionCaches`
+
+Prunes per-session caches inside the VM to free disk space. Called by Desktop's new `VMDiskJanitor` (v1.12603.0).
+
+**Params:**
+```json
+{
+  "onlyIfFreeBytesBelow": int,
+  "includeSessionTmp": boolean,
+  "sessionTmpOlderThanSeconds": int
+}
+```
+
+- `onlyIfFreeBytesBelow` (int): Only prune if free disk space is below this threshold in bytes. `0` means prune unconditionally.
+- `includeSessionTmp` (boolean): Whether to also prune session tmp directories.
+- `sessionTmpOlderThanSeconds` (int): Only prune session tmp content older than this many seconds. `0` means no age limit.
+
+**Response:**
+```json
+{
+  "prunedSessions": [string],
+  "skippedSessions": [string],
+  "freedBytes": int,
+  "errors": {}
+}
+```
+
+**Callers (Desktop's VMDiskJanitor):**
+1. **Periodic timer:** Every 300 s with `(1 GiB, true, 259200)`, only while the guest is connected.
+2. **Pre-spawn low-disk check:** Before spawning, with a 500 MiB low-water threshold.
+3. **Manual menu cleanup:** With `(0, true, 0)` -- prune everything unconditionally.
+
+**Unsupported-detection:** Desktop treats an error containing `"handler not registered"` or `"unknown method"` as "guest doesn't support pruning" and disables the janitor.
+
+**Native Linux behavior:** Typed no-op returning the zero result (empty lists, `freedBytes: 0`, empty errors), implemented in `pipe/handlers.go` (`handlePruneSessionCaches`). Native sessions have no VM-style caches to prune. The janitor short-circuits anyway because our `getSessionsDiskInfo` returns `totalBytes: 0`.
+
+**Added in:** v1.12603.0
 
 ---
 
@@ -920,9 +984,13 @@ On native Linux there is no VM runtime, so the entire flag and its value are rem
 
 **Expanded in v1.1062.0** — bridge/dispatch disallowed list now also includes `mcp__cowork-onboarding__show_onboarding_role_picker`. CU-only mode adds: `mcp__workspace__bash`, `mcp__workspace__web_fetch`, `mcp__cowork__launch_code_session`, `mcp__cowork__present_files`, `mcp__cowork__request_cowork_directory`, `mcp__cowork__allow_cowork_file_delete`, `mcp__mcp-registry__search_mcp_registry`, `mcp__mcp-registry__suggest_connectors`, `mcp__plugins__search_plugins`, `mcp__plugins__suggest_plugin_install`. New built-in disallowed: `Bash`, `NotebookEdit`, `REPL`, `JavaScript`, `WebFetch`.
 
+**Expanded in v1.12603.0** - disallowed tools lists grew further: admin-policy tools, `mcp__workspace__*`, `mcp__Claude_in_Chrome__*`, etc. No daemon impact -- the entire flag is still stripped on native Linux.
+
 ### 2. `--brief` flag injection
 
 Desktop passes `CLAUDE_CODE_BRIEF=1` in the environment for Ditto/dispatch agent sessions only (not for regular cowork). The backend detects this and injects the `--brief` CLI flag, which ensures the CLI registers `SendUserMessage` in its tool list. This was broken in CLI v2.1.79-2.1.85, fixed in v2.1.86.
+
+**Changed in v1.12603.0:** The literal `--brief` flag no longer appears anywhere in Desktop's code -- the env var `CLAUDE_CODE_BRIEF=1` is still set for agent/dispatch sessions, so the backend's injection logic remains the sole source of the flag and continues to apply unchanged.
 
 ### 3. `present_files` interception
 
@@ -1046,6 +1114,8 @@ These methods exist in cowork-svc.exe (from binary string analysis) but are not 
 **v1.8089.0:** Rebuild with no protocol-level changes. `installSdk` parameters changed from `{name}` to `{sdkSubpath, version}` (our handler is a no-op, so no functional impact). `handleCreateDiskImage` and `SetCondaDiskPath` removed from upstream binary strings (our no-op handlers remain for backward compatibility). New spawn env vars: `CLAUDE_CODE_HOST_PLATFORM` (host platform), `TZ` (timezone), `ENABLE_PROMPT_CACHING_1H` (prompt caching), `CLAUDE_CODE_SUBAGENT_MODEL` (conditional subagent model) - all pass through transparently. `--cowork` CLI flag added by plugin system for sub-commands only (not main session spawn). Electron 41.6.1 (was 41.3.0), Agent SDK 0.3.142 (was 0.2.128). Protocol remains at 21 active methods (plus 1 removed), 9 event types.
 
 **v1.8555.2:** No protocol-level changes. All 21 active methods, 9 event types, and wire format are unchanged. RPC dispatch functions renamed in minification (`ME` -> `bE`, `pZ` -> `P5`) but same method set. New hardcoded spawn env var: `CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS: "1"`. New pass-through spawn env vars: `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC`, `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`, `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`, `CLAUDE_CODE_IDE_SKIP_AUTO_INSTALL`, `CLAUDE_CODE_MAX_OUTPUT_TOKENS`, plus 9 `VERTEX_REGION_CLAUDE_*` region vars - all pass through transparently via existing env handling. New client-side stdin backpressure handling: error code `-32002` from `process.stdin` calls triggers retry with backoff (max 150 retries, 16 MB buffer limit) instead of failure - no changes needed in Go daemon but it could optionally use `-32002` for stdin buffer overflow. New artifact MCP system (`cowork-artifact-<N>` per session) is entirely Electron-internal - artifacts are rendered in a dedicated `WebContentsView` and managed by Desktop's `CoworkArtifacts` class. The Go daemon receives zero artifact-related messages. `BRIDGE_DISALLOWED_TOOLS` expanded: `mcp__cowork__create_artifact` and `mcp__cowork__update_artifact` added to the dispatch/bridge disallowed list. New Desktop-internal MCP tools: `list_artifacts`, `read_widget_context`, `archive_session`, `search_session_transcripts`, `list_connectors`, `list_plugins`, `suggest_skills` - all handled within the Electron process, no wire impact. New MCP server "Window Halo" (macOS-only, hardcoded disabled). Office add-in removed as MCP server (moved to IPC bridge). Electron 41.6.1 (unchanged). Agent SDK 0.3.149 (was 0.3.142). Protocol remains at 21 active methods (plus 1 removed), 9 event types.
+
+**v1.12603.0:** First new RPC method since v1.569.0: `pruneSessionCaches` (params `{onlyIfFreeBytesBelow, includeSessionTmp, sessionTmpOlderThanSeconds}`, response `{prunedSessions, skippedSessions, freedBytes, errors}`), called by Desktop's new `VMDiskJanitor` (periodic 300 s timer, pre-spawn low-disk check, manual menu cleanup). Desktop detects unsupported guests via `"handler not registered"` / `"unknown method"` error strings and disables the janitor. Our handler is a typed no-op returning the zero result (`handlePruneSessionCaches` in `pipe/handlers.go`); the janitor also short-circuits because our `getSessionsDiskInfo` returns `totalBytes: 0`. `spawn` gains optional `oauthToken` param (from `env.CLAUDE_CODE_OAUTH_TOKEN`, sent alongside the still-present `addApprovedOauthToken` call; parsed and logged, functionally ignored on native Linux) and a new `failedMounts` response field (array of mount names; we return `[]` since the native backend fails the whole spawn on mount errors). Transport change: Desktop now multiplexes ALL RPCs over one persistent connection by default (incrementing numeric ids, 30 s per-request timeout, now remote-config overridable; per-request connections only behind a fallback feature flag); events still use a second dedicated connection. The Linux daemon now dispatches requests concurrently per connection (`pipe/server.go`); `subscribeEvents` still owns its connection synchronously. Wire framing unchanged (4-byte BE length, 10 MB max); stdin backpressure code `-32002` retained. Methods Desktop no longer calls (handlers kept for backward compat): `isDebugLoggingEnabled` (tracked client-side), `createDiskImage`, `getDownloadStatus` (now a Desktop-local Electron IPC handler). Spawn env changes (all pass-through, no daemon impact): new hardcoded `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`, conditional `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK=1`, `ANTHROPIC_CUSTOM_HEADERS` now populated with `anthropic-client-platform`/`anthropic-client-version`, new `CLAUDE_CODE_OAUTH_SCOPES`. Session types now include `radar` alongside chat/cowork/agent/ccd. The literal `--brief` flag no longer appears in Desktop code (env `CLAUDE_CODE_BRIEF=1` still set for agent/dispatch sessions, so our injection still applies). disallowedTools lists grew (admin-policy tools, `mcp__workspace__*`, `mcp__Claude_in_Chrome__*`, etc.). Electron 42.4.0 (was 41.6.1), Agent SDK 0.3.170 (was 0.3.149), `@modelcontextprotocol/sdk` 1.28.0 (unchanged). Protocol now at 22 active methods (plus 1 removed), 9 event types.
 
 ---
 

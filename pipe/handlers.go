@@ -76,6 +76,8 @@ func (h *Handler) Handle(conn net.Conn, payload []byte) {
 		h.handleGetDownloadStatus(conn, req)
 	case "getSessionsDiskInfo":
 		h.handleGetSessionsDiskInfo(conn, req)
+	case "pruneSessionCaches":
+		h.handlePruneSessionCaches(conn, req)
 	case "deleteSessionDirs":
 		h.handleDeleteSessionDirs(conn, req)
 	case "createDiskImage":
@@ -94,12 +96,14 @@ type configureParams struct {
 	MemoryMB     int    `json:"memoryMB"`
 	CPUCount     int    `json:"cpuCount"`
 	UserDataName string `json:"userDataName"`
+	UserDataRoot string `json:"userDataRoot"`
 	SessionOnly  bool   `json:"sessionOnly"`
 }
 
 type vmNameParams struct {
 	Name         string `json:"name"`
 	UserDataName string `json:"userDataName"`
+	UserDataRoot string `json:"userDataRoot"`
 }
 
 type createVMParams struct {
@@ -133,10 +137,17 @@ type spawnParams struct {
 	AllowedDomains    []string             `json:"allowedDomains"`
 	OneShot           bool                 `json:"oneShot"`
 	MountSkeletonHome bool                 `json:"mountSkeletonHome"`
+	OauthToken        string               `json:"oauthToken"`
 }
 
 type getSessionsDiskInfoParams struct {
 	LowWaterBytes int64 `json:"lowWaterBytes"`
+}
+
+type pruneSessionCachesParams struct {
+	OnlyIfFreeBytesBelow       int64 `json:"onlyIfFreeBytesBelow"`
+	IncludeSessionTmp          bool  `json:"includeSessionTmp"`
+	SessionTmpOlderThanSeconds int64 `json:"sessionTmpOlderThanSeconds"`
 }
 
 type deleteSessionDirsParams struct {
@@ -292,13 +303,16 @@ func (h *Handler) handleSpawn(conn net.Conn, req Request) {
 		WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
 		return
 	}
-	logx.Debug("spawn parsed: name=%q cmd=%q args=%v cwd=%q env=%v", p.Name, p.Cmd, p.Args, p.Cwd, p.Env)
+	logx.Debug("spawn parsed: name=%q cmd=%q args=%v cwd=%q env=%v oauthToken=%v", p.Name, p.Cmd, p.Args, p.Cwd, p.Env, p.OauthToken != "")
 	processID, err := h.backend.Spawn(p.Name, p.ID, p.Cmd, p.Args, p.Env, p.Cwd, p.AdditionalMounts, req.Params)
 	if err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return
 	}
-	WriteResponse(conn, req.ID, map[string]string{"id": processID})
+	// Desktop (since v1.12603.0) reads failedMounts from the spawn result to
+	// surface mount failures in the UI. The native backend fails the whole
+	// spawn on mount errors, so a successful spawn means no failed mounts.
+	WriteResponse(conn, req.ID, map[string]interface{}{"id": processID, "failedMounts": []string{}})
 }
 
 func (h *Handler) handleKill(conn net.Conn, req Request) {
@@ -485,6 +499,31 @@ func (h *Handler) handleGetSessionsDiskInfo(conn net.Conn, req Request) {
 		return
 	}
 	WriteResponse(conn, req.ID, info)
+}
+
+// handlePruneSessionCaches answers Desktop's VM disk janitor (new in
+// v1.12603.0). The janitor calls this periodically, before spawns when disk
+// is low, and from the manual "disk cleanup" menu. On the Windows service the
+// guest prunes session caches and tmp dirs inside the VM image; native
+// sessions have no VM-style caches, so this is a typed no-op (like
+// getSessionsDiskInfo). A well-formed zero result keeps Desktop's
+// supported-detection and telemetry happy.
+func (h *Handler) handlePruneSessionCaches(conn net.Conn, req Request) {
+	var p pruneSessionCachesParams
+	if len(req.Params) > 0 {
+		if err := json.Unmarshal(req.Params, &p); err != nil {
+			WriteError(conn, req.ID, -32602, "Invalid params: "+err.Error())
+			return
+		}
+	}
+	logx.Debug("pruneSessionCaches onlyIfFreeBytesBelow=%d includeSessionTmp=%v sessionTmpOlderThanSeconds=%d (no-op, native mode)",
+		p.OnlyIfFreeBytesBelow, p.IncludeSessionTmp, p.SessionTmpOlderThanSeconds)
+	WriteResponse(conn, req.ID, map[string]interface{}{
+		"prunedSessions":  []string{},
+		"skippedSessions": []string{},
+		"freedBytes":      0,
+		"errors":          map[string]string{},
+	})
 }
 
 func (h *Handler) handleDeleteSessionDirs(conn net.Conn, req Request) {

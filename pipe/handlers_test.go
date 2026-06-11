@@ -113,6 +113,59 @@ func TestHandleStartVMPassesExactBundlePath(t *testing.T) {
 	}
 }
 
+func TestHandlePruneSessionCachesReturnsZeroResult(t *testing.T) {
+	backend := &recordingBackend{}
+	handler := NewHandler(backend, false)
+	server, client := net.Pipe()
+	defer func() { _ = client.Close() }()
+
+	payload, err := json.Marshal(Request{
+		Method: "pruneSessionCaches",
+		ID:     3,
+		Params: mustRawJSON(t, map[string]interface{}{
+			"onlyIfFreeBytesBelow":       1073741824,
+			"includeSessionTmp":          true,
+			"sessionTmpOlderThanSeconds": 259200,
+		}),
+	})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() { _ = server.Close() }()
+		handler.Handle(server, payload)
+	}()
+
+	rawResp, err := ReadMessage(client)
+	if err != nil {
+		t.Fatalf("ReadMessage: %v", err)
+	}
+	<-done
+
+	var resp Response
+	if err := json.Unmarshal(rawResp, &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if !resp.Success {
+		t.Fatalf("response success=false: %s", resp.Error)
+	}
+	result, ok := resp.Result.(map[string]interface{})
+	if !ok {
+		t.Fatalf("result is %T, want object", resp.Result)
+	}
+	for _, key := range []string{"prunedSessions", "skippedSessions", "freedBytes", "errors"} {
+		if _, present := result[key]; !present {
+			t.Fatalf("result missing %q: %v", key, result)
+		}
+	}
+	if freed, _ := result["freedBytes"].(float64); freed != 0 {
+		t.Fatalf("freedBytes = %v, want 0", result["freedBytes"])
+	}
+}
+
 func mustRawJSON(t *testing.T, v interface{}) json.RawMessage {
 	t.Helper()
 

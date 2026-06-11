@@ -4,7 +4,20 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+### Added
+- `pruneSessionCaches` RPC handler (new upstream method in v1.12603.0, called by Desktop's VM disk janitor every 300s, before spawns when disk is low, and from the manual disk cleanup menu) - implemented as a typed no-op returning `{prunedSessions: [], skippedSessions: [], freedBytes: 0, errors: {}}` since native sessions have no VM-style caches
+- `oauthToken` field parsed from spawn params (new in v1.12603.0, mirrors `env.CLAUDE_CODE_OAUTH_TOKEN`; functionally ignored on native Linux where the token reaches the CLI via env)
+- Spawn response now includes `failedMounts: []` - Desktop v1.12603.0 reads it to surface mount failures in the UI (native backend fails the whole spawn on mount errors, so success implies none failed)
+- `userDataRoot` parsed (and ignored) in `configure`/`subscribeEvents` params
+
 ### Changed
+- Updated upstream reference materials from Claude Desktop v1.8555.2 to v1.12603.0
+- Concurrent RPC dispatch per connection (`pipe/server.go`) - Desktop v1.12603.0 multiplexes all RPCs over one persistent connection, so slow handlers (e.g. kill's 1s delay, stopVM's session backup) no longer stall unrelated in-flight requests toward the client's 30s timeout; `subscribeEvents` still owns its connection synchronously
+- VM bundle SHA changed for the first time since v1.1.9669: `5680b11b...` -> `6d1538ba6fecc4e5c5583993c4b30bb1875f0f5a` (all-new VM images, all file checksums changed)
+- Electron 41.6.1 -> 42.4.0, Agent SDK 0.3.149 -> 0.3.170 (MCP SDK 1.28.0 unchanged); cowork-svc.exe itself is a metadata rebuild (same size, same go1.24.13, same handlers and dependencies, one new dispatch string `pruneSessionCaches`)
+- Desktop no longer calls `isDebugLoggingEnabled`, `createDiskImage`, or `getDownloadStatus` over the pipe as of v1.12603.0 (our handlers remain for backward compatibility)
+- New spawn env vars passed through transparently (v1.12603.0): `CLAUDE_CODE_DISABLE_REFUSAL_FALLBACK`, `CLAUDE_CODE_OAUTH_SCOPES`, populated `ANTHROPIC_CUSTOM_HEADERS`; new session type `radar`; literal `--brief` flag no longer used by Desktop (env `CLAUDE_CODE_BRIEF=1` remains)
+
 - Updated upstream reference materials from Claude Desktop v1.7196.0 to v1.8555.2
 - `installSdk` RPC params changed from `{name}` to `{sdkSubpath, version}` upstream (our handler is a no-op, no functional impact; struct already had the new fields)
 - `handleCreateDiskImage` and `SetCondaDiskPath` removed from upstream binary strings (our no-op handlers remain for backward compatibility)
