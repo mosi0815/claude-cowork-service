@@ -39,6 +39,7 @@ type localProcess struct {
 	reverseMap        bool        // only reverse-map output if VM path exists on filesystem
 	mountRemap        []pathRemap // fwd: session/mnt/<mount> → real host path (for stdin)
 	reverseMountRemap []pathRemap // rev: real host path → VM /sessions/<name>/mnt/<mount> (for stdout)
+	isDispatch        bool        // dispatch/agent session (CLAUDE_CODE_BRIEF=1): user is on a remote client
 }
 
 // processTracker manages all spawned processes and streams their output via event callbacks.
@@ -179,6 +180,7 @@ func (pt *processTracker) spawn(id string, cmd string, args []string, env map[st
 		done:              make(chan struct{}),
 		mountRemap:        mountRemap,
 		reverseMountRemap: reverseMountRemap,
+		isDispatch:        env["CLAUDE_CODE_BRIEF"] == "1",
 	}
 	if vmPrefix != "" && realPrefix != "" {
 		lp.vmPrefix = []byte(vmPrefix)
@@ -412,11 +414,13 @@ func (pt *processTracker) tryHandlePresentFiles(lp *localProcess, line string) b
 	// as a file path and calls readLocalFile on it to display file cards. We must
 	// return individual file paths — NOT descriptive text — to match this contract.
 	//
-	// After the file paths, we append a hint telling the model to also deliver
-	// the files via SendUserMessage's attachments parameter. Desktop logs a
-	// harmless warning for this non-path item, but processes the real paths fine.
-	// Without this hint, the model often skips attachments and uses markdown
-	// links that don't reach remote/mobile dispatch users.
+	// For dispatch sessions only, we append a hint after the file paths telling
+	// the model to also deliver the files via SendUserMessage's attachments
+	// parameter. Without it, the model often skips attachments and uses markdown
+	// links that don't reach remote/mobile dispatch users. The hint must NOT be
+	// sent in regular cowork sessions: Desktop renders a broken duplicate file
+	// card for the non-path item and calls readLocalFile on the hint text
+	// (INVALID_PATH errors).
 	isError := false
 	var contentItems []map[string]interface{}
 
@@ -442,12 +446,14 @@ func (pt *processTracker) tryHandlePresentFiles(lp *localProcess, line string) b
 		// present_files creates Desktop UI cards but they don't reach mobile/remote
 		// dispatch users. The attachments parameter on SendUserMessage uploads files
 		// for delivery to the remote client.
-		var paths []string
-		paths = append(paths, presented...)
-		contentItems = append(contentItems, map[string]interface{}{
-			"type": "text",
-			"text": fmt.Sprintf("NOTE: present_files cards may not be visible to the user (mobile/remote). To ensure delivery, also call SendUserMessage and include the file paths in the attachments parameter: %v", paths),
-		})
+		if lp.isDispatch {
+			var paths []string
+			paths = append(paths, presented...)
+			contentItems = append(contentItems, map[string]interface{}{
+				"type": "text",
+				"text": fmt.Sprintf("NOTE: present_files cards may not be visible to the user (mobile/remote). To ensure delivery, also call SendUserMessage and include the file paths in the attachments parameter: %v", paths),
+			})
+		}
 	}
 
 	log.Printf("[native] present_files handled locally: %d presented, %d missing", len(presented), len(missing))
