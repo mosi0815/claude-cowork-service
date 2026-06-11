@@ -58,6 +58,14 @@ func (b *recordingBackend) GetSessionsDiskInfo(lowWaterBytes int64) (SessionsDis
 func (b *recordingBackend) DeleteSessionDirs(names []string) (DeleteSessionDirsResult, error) {
 	return DeleteSessionDirsResult{}, nil
 }
+func (b *recordingBackend) PruneSessionCaches(onlyIfFreeBytesBelow int64, includeSessionTmp bool, sessionTmpOlderThanSeconds int64) (PruneSessionCachesResult, error) {
+	return PruneSessionCachesResult{
+		PrunedSessions:  []string{},
+		SkippedSessions: []string{},
+		FreedBytes:      0,
+		Errors:          map[string]string{},
+	}, nil
+}
 func (b *recordingBackend) CreateDiskImage(diskName string, sizeGiB int) error { return nil }
 func (b *recordingBackend) SendGuestResponse(id string, resultJSON string, errMsg string) error {
 	return nil

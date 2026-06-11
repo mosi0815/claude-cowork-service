@@ -549,6 +549,24 @@ func (b *Backend) DeleteSessionDirs(names []string) (pipe.DeleteSessionDirsResul
 	}, nil
 }
 
+// PruneSessionCaches is a typed no-op on native Linux. The session dirs under
+// ~/.local/share/claude-cowork/sessions/ hold mounts and user work products,
+// not caches - the CLI's caches live in the user's real home, shared with
+// their own claude install, and must not be touched. A well-formed zero
+// result keeps Desktop's disk janitor and telemetry happy.
+func (b *Backend) PruneSessionCaches(onlyIfFreeBytesBelow int64, includeSessionTmp bool, sessionTmpOlderThanSeconds int64) (pipe.PruneSessionCachesResult, error) {
+	if b.debug {
+		log.Printf("[native] pruneSessionCaches onlyIfFreeBytesBelow=%d includeSessionTmp=%v sessionTmpOlderThanSeconds=%d (no-op, native mode)",
+			onlyIfFreeBytesBelow, includeSessionTmp, sessionTmpOlderThanSeconds)
+	}
+	return pipe.PruneSessionCachesResult{
+		PrunedSessions:  []string{},
+		SkippedSessions: []string{},
+		FreedBytes:      0,
+		Errors:          map[string]string{},
+	}, nil
+}
+
 func (b *Backend) CreateDiskImage(diskName string, sizeGiB int) error {
 	if b.debug {
 		log.Printf("[native] createDiskImage diskName=%q sizeGiB=%d (no-op, native mode)", diskName, sizeGiB)

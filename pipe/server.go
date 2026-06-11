@@ -28,6 +28,13 @@ type DeleteSessionDirsResult struct {
 	Errors  map[string]string `json:"errors"`
 }
 
+type PruneSessionCachesResult struct {
+	PrunedSessions  []string          `json:"prunedSessions"`
+	SkippedSessions []string          `json:"skippedSessions"`
+	FreedBytes      int64             `json:"freedBytes"`
+	Errors          map[string]string `json:"errors"`
+}
+
 type VMBackend interface {
 	Configure(memoryMB int, cpuCount int) error
 	CreateVM(name string) error
@@ -48,6 +55,7 @@ type VMBackend interface {
 	GetDownloadStatus() string
 	GetSessionsDiskInfo(lowWaterBytes int64) (SessionsDiskInfo, error)
 	DeleteSessionDirs(names []string) (DeleteSessionDirsResult, error)
+	PruneSessionCaches(onlyIfFreeBytesBelow int64, includeSessionTmp bool, sessionTmpOlderThanSeconds int64) (PruneSessionCachesResult, error)
 	CreateDiskImage(diskName string, sizeGiB int) error
 	SendGuestResponse(id string, resultJSON string, errMsg string) error
 

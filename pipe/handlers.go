@@ -503,11 +503,10 @@ func (h *Handler) handleGetSessionsDiskInfo(conn net.Conn, req Request) {
 
 // handlePruneSessionCaches answers Desktop's VM disk janitor (new in
 // v1.12603.0). The janitor calls this periodically, before spawns when disk
-// is low, and from the manual "disk cleanup" menu. On the Windows service the
-// guest prunes session caches and tmp dirs inside the VM image; native
-// sessions have no VM-style caches, so this is a typed no-op (like
-// getSessionsDiskInfo). A well-formed zero result keeps Desktop's
-// supported-detection and telemetry happy.
+// is low, and from the manual "disk cleanup" menu. The KVM backend forwards
+// it to the guest sdk-daemon (which does the actual pruning inside the VM
+// image); the native backend is a typed no-op since native sessions have no
+// VM-style caches.
 func (h *Handler) handlePruneSessionCaches(conn net.Conn, req Request) {
 	var p pruneSessionCachesParams
 	if len(req.Params) > 0 {
@@ -516,14 +515,12 @@ func (h *Handler) handlePruneSessionCaches(conn net.Conn, req Request) {
 			return
 		}
 	}
-	logx.Debug("pruneSessionCaches onlyIfFreeBytesBelow=%d includeSessionTmp=%v sessionTmpOlderThanSeconds=%d (no-op, native mode)",
-		p.OnlyIfFreeBytesBelow, p.IncludeSessionTmp, p.SessionTmpOlderThanSeconds)
-	WriteResponse(conn, req.ID, map[string]interface{}{
-		"prunedSessions":  []string{},
-		"skippedSessions": []string{},
-		"freedBytes":      0,
-		"errors":          map[string]string{},
-	})
+	result, err := h.backend.PruneSessionCaches(p.OnlyIfFreeBytesBelow, p.IncludeSessionTmp, p.SessionTmpOlderThanSeconds)
+	if err != nil {
+		WriteError(conn, req.ID, -32000, err.Error())
+		return
+	}
+	WriteResponse(conn, req.ID, result)
 }
 
 func (h *Handler) handleDeleteSessionDirs(conn net.Conn, req Request) {

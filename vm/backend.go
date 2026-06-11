@@ -737,6 +737,42 @@ func (b *KvmBackend) DeleteSessionDirs(names []string) (pipe.DeleteSessionDirsRe
 	return result, nil
 }
 
+// PruneSessionCaches forwards to the guest sdk-daemon, which prunes session
+// caches and tmp dirs inside the VM image. If the guest's sdk-daemon predates
+// the method (pre-v1.12603.0 VM bundles), its "handler not registered" error
+// is forwarded verbatim - exactly what Desktop's janitor checks to disable
+// cache pruning.
+func (b *KvmBackend) PruneSessionCaches(onlyIfFreeBytesBelow int64, includeSessionTmp bool, sessionTmpOlderThanSeconds int64) (pipe.PruneSessionCachesResult, error) {
+	b.mu.RLock()
+	bridge := b.bridge
+	b.mu.RUnlock()
+	if bridge == nil || !bridge.IsConnected() {
+		return pipe.PruneSessionCachesResult{}, fmt.Errorf("guest not connected")
+	}
+	resp, err := bridge.Forward("pruneSessionCaches", map[string]interface{}{
+		"onlyIfFreeBytesBelow":       onlyIfFreeBytesBelow,
+		"includeSessionTmp":          includeSessionTmp,
+		"sessionTmpOlderThanSeconds": sessionTmpOlderThanSeconds,
+	})
+	if err != nil {
+		return pipe.PruneSessionCachesResult{}, err
+	}
+	var result pipe.PruneSessionCachesResult
+	if err := json.Unmarshal(resp, &result); err != nil {
+		return pipe.PruneSessionCachesResult{}, fmt.Errorf("parsing pruneSessionCaches response: %w", err)
+	}
+	if result.PrunedSessions == nil {
+		result.PrunedSessions = []string{}
+	}
+	if result.SkippedSessions == nil {
+		result.SkippedSessions = []string{}
+	}
+	if result.Errors == nil {
+		result.Errors = map[string]string{}
+	}
+	return result, nil
+}
+
 func (b *KvmBackend) CreateDiskImage(diskName string, sizeGiB int) error {
 	if b.debug {
 		log.Printf("[kvm] createDiskImage diskName=%q sizeGiB=%d (no-op)", diskName, sizeGiB)
