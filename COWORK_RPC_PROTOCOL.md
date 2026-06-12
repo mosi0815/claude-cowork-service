@@ -245,7 +245,7 @@ Spawns a command as a child process. This is the most complex method in the prot
 ```
 
 **New fields (v1.1.9669):**
-- `isResume` (boolean, default `false`): Whether this is a resumed session.
+- `isResume` (boolean, default `false`): Whether this is a resumed session. The Linux daemon does not read this field directly -- a resume is detected from the `--resume <cliSessionId>` flag Desktop puts in `args`, which drives the resume-aware cwd selection (native) and transcript migration (native + KVM). See "CWD selection" below.
 - `allowedDomains` (array of strings, optional): Network egress allowlist for the spawned process. Ignored on native Linux (no network isolation).
 - `oneShot` (boolean, default `false`): For one-shot command execution.
 - `mountSkeletonHome` (boolean, default `false`): Whether to mount a skeleton home directory.
@@ -334,7 +334,12 @@ All spawn `env` variables are passed through transparently to the spawned proces
 2. **Mount symlink creation:** For each entry in `additionalMounts`, creates a symlink from `mnt/<mount-name>` to the real host path. Skips non-directory mounts (e.g., `app.asar`). Detects and skips self-referencing symlinks (ELOOP prevention).
 3. **Root symlink attempt:** Tries to create `/sessions/<name>` pointing to the real session dir (may fail without root -- that is OK).
 4. **Path remapping:** Remaps `cwd`, `env` values, and `args` that contain `/sessions/<name>` to the real session directory path.
-5. **CWD selection:** Uses the first non-hidden, non-special (`uploads`, `outputs`) mount as the working directory, resolving to the real filesystem path (not the symlink) so Glob works correctly.
+5. **CWD selection (deterministic, resume-aware):** Uses a non-hidden, non-special (`uploads`, `outputs`) workspace mount as the working directory, resolved to the real filesystem path (not the symlink) so Glob works correctly. The choice matters because the CLI stores transcripts under `$CLAUDE_CONFIG_DIR/projects/<slug(cwd)>/` (slug = cwd with every non-alphanumeric character replaced by `-`) and resolves `--resume` only within the slug of its current cwd. Selection order:
+   - **Resume slug match:** if `args` contain `--resume <id>` and the transcript `<id>.jsonl` already exists under a candidate's slug dir, that candidate wins -- this keeps the cwd stable across re-spawns of the same session.
+   - **Migration copy:** if the transcript exists only under a foreign slug (KVM-era session resumed natively, or the original folder is no longer mounted), it is copied (never moved or overwritten) into the chosen candidate's slug dir so `--resume` still works.
+   - **Fresh rule:** first entry of `env.CLAUDE_CODE_WORKSPACE_HOST_PATHS` (ordered, `|`-delimited) that matches an eligible mount; otherwise the eligible mount with the lexicographically smallest mount name.
+   - **No eligible mounts:** the (remapped) session directory stays the cwd, as before.
+   Before this, the daemon picked the first entry of Go's randomized map iteration, so sessions with multiple selected folders changed cwd (and therefore transcript slug) between spawns -- the second message after the CLI process exited failed with "No conversation found with session ID" and Desktop orphaned the transcript ([#66](https://github.com/patrickjaja/claude-cowork-service/issues/66)).
 6. **Environment cleanup:** Strips all empty-string environment variables (prevents auth failures -- see Discovery #8).
 7. **MCP server pass-through:** SDK MCP servers (`dispatch`, `cowork`, `session_info`) in `--mcp-config` are kept intact. The CLI sends `control_request` messages via the event stream, and Desktop's session manager handles them natively.
 8. **`--disallowedTools` stripping:** Removes the entire `--disallowedTools` flag and its value. Desktop passes this for VM sessions where certain tools are handled by the VM runtime. On native Linux, all tools must be available to the CLI directly.
@@ -348,6 +353,15 @@ All spawn `env` variables are passed through transparently to the spawned proces
 13. **Process group creation:** Sets `Setpgid: true` so the entire process group can be killed.
 14. **Nested session prevention:** Strips `CLAUDECODE` and `CLAUDE_CODE_ENTRYPOINT` environment variables to prevent "cannot be launched inside another Claude Code session" errors.
 15. **Output streaming:** Both stdout and stderr are streamed, with stderr content emitted as `stdout` events (Claude Code writes stream-json on stderr -- see Discovery #10).
+
+**KVM backend behavior (step by step):**
+
+1. **Native-era state sanitization:** Before binding mounts, removes symlinks the native backend left behind: every symlink in `~/.local/share/claude-cowork/sessions/<name>/mnt/` and, for each nested mount name (e.g. `.claude/skills`, `<folder>/.mcpb-cache`), a stranded symlink at `<parent mount source>/<rel>`. These absolute symlinks dangle inside the guest and make the guest sdk-daemon's mountpoint `MkdirAll` fail with `EEXIST` ("failed to create mount point: ... file exists"). Only symlinks are ever removed (all daemon-created; the native backend recreates them on demand), never directories or files ([#64](https://github.com/patrickjaja/claude-cowork-service/issues/64)).
+2. **Mount binding:** Each `additionalMounts` entry is bind-mounted into the virtiofs staging area via the vfs helper. A bind failure fails the spawn RPC.
+3. **Command rewrite:** Host-style claude paths are rewritten to the guest install location `/usr/local/bin/claude`.
+4. **Transcript migration for resume:** If `args` contain `--resume <id>` and the transcript exists in the `.claude` mount source under a slug other than `slug(cwd)` (native-era sessions used host-path cwds; the guest runs with `/sessions/<name>`), the transcript is copied (never moved or overwritten) into the slug dir the guest CLI will resolve `--resume` under ([#64](https://github.com/patrickjaja/claude-cowork-service/issues/64)).
+5. **Forwarding:** Desktop's raw spawn params (with the rewritten `command`) are forwarded to the guest sdk-daemon over vsock.
+6. **Error propagation:** A forward failure (guest rejected the spawn, vsock down, 30s timeout) is returned as a JSON-RPC error so Desktop surfaces it. Previously it was converted into synthetic stderr/exit events plus a success response, so Desktop logged "Spawn succeeded" and dispatch/phone clients failed silently. A best-effort async `kill` reaps a guest process that may have launched late in the timeout case.
 
 ---
 

@@ -422,6 +422,13 @@ func (b *KvmBackend) Spawn(name string, id string, cmd string, args []string, en
 		return "", nil, fmt.Errorf("VM not started")
 	}
 
+	// Native-era session state (absolute symlinks created by the native
+	// backend) breaks guest mountpoint creation and transcript resume.
+	// Sanitize and migrate host-side - the guest sdk-daemon is upstream
+	// and cannot be changed.
+	home, _ := os.UserHomeDir()
+	sanitizeNativeArtifacts(home, name, mounts, b.debug)
+
 	// Bind any additionalMounts the helper doesn't know about yet.
 	if helper != nil {
 		for mountName, mount := range mounts {
@@ -472,13 +479,26 @@ func (b *KvmBackend) Spawn(name string, id string, cmd string, args []string, en
 		}
 	}
 	spawnParams["command"] = cmd
+	migrateTranscriptForResume(home, args, cwd, mounts, b.debug)
 	resp, err := bridge.Forward("spawn", spawnParams)
 	if err != nil {
 		log.Printf("[kvm] spawn forward failed: %v", err)
-		b.emit(process.NewStderrEvent(id,
-			fmt.Sprintf("Error: Failed to spawn in VM: %v\n", err)))
-		b.emit(process.NewExitEvent(id, 1))
-		return id, nil, nil
+		// Best-effort reap: in the 30s-timeout case the guest may still
+		// launch the process late; the kill catches it, and it is an
+		// instant no-op when the guest is disconnected.
+		go func() {
+			if _, kerr := bridge.Forward("kill", map[string]interface{}{
+				"id": id, "signal": "SIGKILL",
+			}); kerr != nil && b.debug {
+				log.Printf("[kvm] spawn cleanup kill failed: %v", kerr)
+			}
+		}()
+		// Return an error (instead of success + synthetic stderr/exit
+		// events) so pipe/handlers.go surfaces it as a JSON-RPC error,
+		// which Desktop's spawn path reports to the user. Previously
+		// Desktop logged "Spawn succeeded" and dispatch/phone users got
+		// silence.
+		return "", nil, fmt.Errorf("guest spawn failed: %w", err)
 	}
 	log.Printf("[kvm] spawn ack from guest: id=%s resp=%s", id, logx.Trunc(string(resp)))
 

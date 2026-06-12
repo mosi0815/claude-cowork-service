@@ -210,3 +210,27 @@ func mustJSON(t *testing.T, payload interface{}) []byte {
 	}
 	return raw
 }
+
+func TestSpawnReturnsErrorWhenForwardFails(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	// Bridge exists but never connected (no Listen): Forward fails
+	// immediately with "guest not connected". helper stays nil, so the
+	// bind loop is skipped.
+	b := NewKvmBackend("", false)
+	b.started = true
+	b.bridge = NewGuestBridge(VsockGuestPort, false, func(interface{}) {})
+
+	_, _, err := b.Spawn("sess", "proc-1", "/usr/local/bin/claude", nil, nil, "/sessions/sess", nil, nil)
+	if err == nil {
+		t.Fatalf("Spawn returned success although the guest forward failed")
+	}
+
+	running, _, perr := b.IsProcessRunning("proc-1")
+	if perr != nil {
+		t.Fatalf("IsProcessRunning: %v", perr)
+	}
+	if running {
+		t.Fatalf("process registered as running despite failed spawn forward")
+	}
+}

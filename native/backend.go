@@ -338,23 +338,15 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 		}
 	}
 
-	// Use the real workspace directory as cwd instead of the session directory.
+	// Use a real workspace directory as cwd instead of the session directory.
 	// The session's mnt/ dir uses symlinks for mounts, but Glob doesn't follow
-	// directory symlinks, so files aren't found. Setting cwd to the actual
-	// workspace path lets the model search real files directly.
-	for mountName, mount := range mounts {
-		if strings.HasPrefix(mountName, ".") || mountName == "uploads" || mountName == "outputs" {
-			continue
-		}
-		wsPath := resolveSubpath(home, mount.Path)
-		if info, err := os.Stat(wsPath); err == nil && info.IsDir() {
-			if b.debug {
-				log.Printf("[native] using workspace mount %q as cwd: %s (was %s)", mountName, wsPath, cwd)
-			}
-			cwd = wsPath
-		}
-		break
-	}
+	// directory symlinks, so files aren't found - setting cwd to the actual
+	// workspace path lets the model search real files directly. The selection
+	// is deterministic (env-hint order, then mount-name order) and resume-aware:
+	// the CLI resolves --resume only under the project slug of its cwd, so
+	// re-spawns must land in the directory the transcript was created under
+	// (issue #66).
+	cwd = chooseSpawnCwd(home, cwd, args, env, mounts, b.debug)
 
 	// Remove empty env vars that might confuse auth (e.g. empty ANTHROPIC_API_KEY)
 	for k, v := range env {
