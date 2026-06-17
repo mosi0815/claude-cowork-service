@@ -214,6 +214,32 @@ The daemon mimics the Windows `cowork-svc.exe` exactly at the protocol level so 
 - **CI version:** from git tags via `-X main.version=$(VERSION)` ldflags
 - **Release:** `workflow_dispatch` with patch/minor/major bump
 
+### Release & CHANGELOG flow (do NOT date entries by hand)
+
+The release job in `.github/workflows/build-and-release.yml` ("Update CHANGELOG
+and create tag", `workflow_dispatch` only) owns the dating:
+
+- It renames `## Unreleased` to `## <VERSION> — <DATE>` (today's date), inserts a
+  fresh empty `## Unreleased` above it, commits, pushes, and tags **the commit
+  that includes that CHANGELOG update**.
+
+Therefore:
+
+- **Always add new entries under `## Unreleased`.** Never create a manually-dated
+  `## YYYY-MM-DD` / `## x.y.z — DATE` heading yourself — the job does it. A
+  hand-dated heading would be skipped by the dating step and the entries would
+  never be promoted into a versioned section.
+- **Never move entries into an already-tagged version section** (e.g. an existing
+  `## 1.0.59 — ...`). Tags are immutable and point at a specific built binary; a
+  fix that isn't in that binary must not be listed under its tag, or the CHANGELOG
+  claims fixes the release does not contain. The fix belongs under `## Unreleased`
+  and ships with the next tag.
+- Consequence: it's fine (and correct) to end up with two same-date headings — an
+  earlier empty release and a later populated one — because each maps accurately
+  to its own tagged code. Do not "tidy" them by merging across a tag boundary.
+- A release cut on a day when `## Unreleased` is empty produces an **empty** dated
+  section — that's expected, not a bug.
+
 ## GitHub Policy
 
 - NEVER update, comment on, or close any GitHub tickets/issues/PRs unless explicitly asked to do so.
