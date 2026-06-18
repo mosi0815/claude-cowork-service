@@ -221,7 +221,7 @@ func TestSpawnReturnsErrorWhenForwardFails(t *testing.T) {
 	b.started = true
 	b.bridge = NewGuestBridge(VsockGuestPort, false, func(interface{}) {})
 
-	_, _, err := b.Spawn("sess", "proc-1", "/usr/local/bin/claude", nil, nil, "/sessions/sess", nil, nil)
+	_, _, err := b.Spawn("sess", "proc-1", "/usr/local/bin/claude", nil, nil, "/sessions/sess", nil, nil, "")
 	if err == nil {
 		t.Fatalf("Spawn returned success although the guest forward failed")
 	}

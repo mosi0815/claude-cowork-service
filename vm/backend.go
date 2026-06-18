@@ -414,7 +414,9 @@ func (b *KvmBackend) IsGuestConnected(name string) (bool, error) {
 
 // Spawn binds any new additionalMounts into the virtiofs share, then
 // forwards the spawn request to the guest sdk-daemon.
-func (b *KvmBackend) Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]pipe.MountSpec, rawParams []byte) (string, []string, error) {
+// oauthToken (spawn-param) is unused in KVM mode: the token reaches the guest
+// via the separate AddApprovedOauthToken RPC, which forwards it over the bridge.
+func (b *KvmBackend) Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]pipe.MountSpec, rawParams []byte, _ string) (string, []string, error) {
 	b.mu.RLock()
 	helper := b.helper
 	bridge := b.bridge

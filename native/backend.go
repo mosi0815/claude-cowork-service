@@ -217,7 +217,7 @@ func (b *Backend) IsGuestConnected(name string) (bool, error) {
 	return true, nil
 }
 
-func (b *Backend) Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]pipe.MountSpec, _ []byte) (string, []string, error) {
+func (b *Backend) Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]pipe.MountSpec, _ []byte, oauthToken string) (string, []string, error) {
 	if b.debug {
 		log.Printf("[native] spawn: %s %v (cwd=%s, mounts=%v)", cmd, args, cwd, mounts)
 	}
@@ -352,6 +352,15 @@ func (b *Backend) Spawn(name string, id string, cmd string, args []string, env m
 	for k, v := range env {
 		if v == "" {
 			delete(env, k)
+		}
+	}
+
+	// Inject the approved OAuth token (1p subscription auth) into the child env.
+	if injected, reason := injectOauthToken(env, oauthToken); b.debug {
+		if injected {
+			log.Printf("[native] injected CLAUDE_CODE_OAUTH_TOKEN into spawn env (len=%d)", len(oauthToken))
+		} else if reason != "" {
+			log.Printf("[native] not injecting CLAUDE_CODE_OAUTH_TOKEN: %s", reason)
 		}
 	}
 
@@ -569,9 +578,53 @@ func (b *Backend) InstallSdk(sdkSubpath string, version string) error {
 	return nil
 }
 
+// injectOauthToken restores the approved 1p OAuth token into a spawned CLI's
+// environment as CLAUDE_CODE_OAUTH_TOKEN.
+//
+// Desktop sends the token on the spawn RPC (spawnParams.oauthToken) but STRIPS
+// CLAUDE_CODE_OAUTH_TOKEN from the child env before the call: on macOS a native
+// addon re-injects it via a MITM proxy. Linux native mode has no such proxy, so
+// without this the child CLI starts with apiKeySource=none and fails with
+// "Not logged in · Please run /login".
+//
+// 1p-only: skip if the session already carries a credential (resume / explicit
+// env) or is a 3p/gateway setup (API key, Bedrock/Vertex/Foundry base URL) that
+// authenticates differently — injecting a 1p OAuth token there would clobber the
+// intended auth. Mutates env. Returns whether it injected and, if not, why.
+func injectOauthToken(env map[string]string, oauthToken string) (injected bool, skipReason string) {
+	if oauthToken == "" {
+		return false, ""
+	}
+	if _, ok := env["CLAUDE_CODE_OAUTH_TOKEN"]; ok {
+		return false, "CLAUDE_CODE_OAUTH_TOKEN already set"
+	}
+	if _, ok := env["ANTHROPIC_AUTH_TOKEN"]; ok {
+		return false, "ANTHROPIC_AUTH_TOKEN already set"
+	}
+	for _, k := range []string{
+		"ANTHROPIC_API_KEY",
+		"ANTHROPIC_BEDROCK_BASE_URL",
+		"ANTHROPIC_VERTEX_BASE_URL",
+		"ANTHROPIC_FOUNDRY_BASE_URL",
+	} {
+		if _, ok := env[k]; ok {
+			return false, "third-party auth present (" + k + ")"
+		}
+	}
+	env["CLAUDE_CODE_OAUTH_TOKEN"] = oauthToken
+	return true, ""
+}
+
+// AddApprovedOauthToken is intentionally a no-op for the native backend.
+//
+// This RPC is the KVM handoff mechanism: KvmBackend forwards the token to the
+// guest VM, where the guest daemon injects it into the spawned CLI. Native mode
+// has no guest — it authenticates the child directly in Spawn() using the
+// oauthToken carried on the spawn RPC. Desktop sends BOTH the addApprovedOauthToken
+// RPC and the spawn-param token, so this being a no-op on native is correct.
 func (b *Backend) AddApprovedOauthToken(token string) error {
 	if b.debug {
-		log.Printf("[native] addApprovedOauthToken (no-op)")
+		log.Printf("[native] addApprovedOauthToken (no-op; native injects via spawn param)")
 	}
 	return nil
 }

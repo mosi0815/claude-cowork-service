@@ -305,7 +305,7 @@ func (h *Handler) handleSpawn(conn net.Conn, req Request) {
 		return
 	}
 	logx.Debug("spawn parsed: name=%q cmd=%q args=%v cwd=%q env=%v oauthToken=%v", p.Name, p.Cmd, p.Args, p.Cwd, p.Env, p.OauthToken != "")
-	processID, failedMounts, err := h.backend.Spawn(p.Name, p.ID, p.Cmd, p.Args, p.Env, p.Cwd, p.AdditionalMounts, req.Params)
+	processID, failedMounts, err := h.backend.Spawn(p.Name, p.ID, p.Cmd, p.Args, p.Env, p.Cwd, p.AdditionalMounts, req.Params, p.OauthToken)
 	if err != nil {
 		WriteError(conn, req.ID, -32000, err.Error())
 		return

@@ -48,7 +48,7 @@ type VMBackend interface {
 	// Spawn starts a session process. failedMounts lists the mount names
 	// that could not be attached; Desktop (v1.12603.0+) reads it from the
 	// spawn response to surface mount failures and retry them on resume.
-	Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]MountSpec, rawParams []byte) (processID string, failedMounts []string, err error)
+	Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]MountSpec, rawParams []byte, oauthToken string) (processID string, failedMounts []string, err error)
 	Kill(processID string, signal string) error
 	WriteStdin(processID string, data []byte) error
 	IsProcessRunning(processID string) (bool, int, error)

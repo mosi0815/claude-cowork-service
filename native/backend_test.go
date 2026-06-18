@@ -180,3 +180,65 @@ func TestResolveSubpathSymlink(t *testing.T) {
 		}
 	})
 }
+
+func TestInjectOauthToken(t *testing.T) {
+	const tok = "sk-ant-oat01-EXAMPLE"
+
+	t.Run("InjectsWhenNoCredential", func(t *testing.T) {
+		env := map[string]string{"ANTHROPIC_BASE_URL": "https://api.anthropic.com"}
+		injected, reason := injectOauthToken(env, tok)
+		if !injected {
+			t.Fatalf("expected injection, got skip: %q", reason)
+		}
+		if env["CLAUDE_CODE_OAUTH_TOKEN"] != tok {
+			t.Errorf("CLAUDE_CODE_OAUTH_TOKEN = %q, want %q", env["CLAUDE_CODE_OAUTH_TOKEN"], tok)
+		}
+	})
+
+	t.Run("EmptyTokenNoOp", func(t *testing.T) {
+		env := map[string]string{}
+		if injected, _ := injectOauthToken(env, ""); injected {
+			t.Error("empty token should not inject")
+		}
+		if _, ok := env["CLAUDE_CODE_OAUTH_TOKEN"]; ok {
+			t.Error("empty token must not set CLAUDE_CODE_OAUTH_TOKEN")
+		}
+	})
+
+	t.Run("SkipsWhenTokenVarsAlreadyPresent", func(t *testing.T) {
+		for _, k := range []string{"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_AUTH_TOKEN"} {
+			env := map[string]string{k: "existing"}
+			injected, reason := injectOauthToken(env, tok)
+			if injected {
+				t.Errorf("%s present: expected skip, but injected", k)
+			}
+			if reason == "" {
+				t.Errorf("%s present: expected a skip reason", k)
+			}
+			if env["CLAUDE_CODE_OAUTH_TOKEN"] != "existing" && k == "CLAUDE_CODE_OAUTH_TOKEN" {
+				t.Errorf("must not overwrite existing CLAUDE_CODE_OAUTH_TOKEN")
+			}
+		}
+	})
+
+	t.Run("SkipsThirdPartyAuth", func(t *testing.T) {
+		for _, k := range []string{
+			"ANTHROPIC_API_KEY",
+			"ANTHROPIC_BEDROCK_BASE_URL",
+			"ANTHROPIC_VERTEX_BASE_URL",
+			"ANTHROPIC_FOUNDRY_BASE_URL",
+		} {
+			env := map[string]string{k: "set"}
+			injected, reason := injectOauthToken(env, tok)
+			if injected {
+				t.Errorf("%s present (3p): expected skip, but injected 1p token", k)
+			}
+			if reason == "" {
+				t.Errorf("%s present: expected a skip reason", k)
+			}
+			if _, ok := env["CLAUDE_CODE_OAUTH_TOKEN"]; ok {
+				t.Errorf("%s present: must not inject 1p token into 3p session", k)
+			}
+		}
+	})
+}

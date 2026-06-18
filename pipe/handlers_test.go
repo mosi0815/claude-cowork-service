@@ -27,7 +27,7 @@ func (b *recordingBackend) IsRunning(name string) (bool, error) {
 func (b *recordingBackend) IsGuestConnected(name string) (bool, error) {
 	return false, nil
 }
-func (b *recordingBackend) Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]MountSpec, rawParams []byte) (string, []string, error) {
+func (b *recordingBackend) Spawn(name string, id string, cmd string, args []string, env map[string]string, cwd string, mounts map[string]MountSpec, rawParams []byte, oauthToken string) (string, []string, error) {
 	return "", nil, nil
 }
 func (b *recordingBackend) Kill(processID string, signal string) error { return nil }
