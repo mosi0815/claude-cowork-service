@@ -4,6 +4,8 @@ All notable changes to claude-cowork-service will be documented in this file.
 
 ## Unreleased
 
+## 1.0.61 — 2026-06-18
+
 ### Fixed
 - **Cowork "Not logged in / setting up workspace" loop (native backend, 1p subscription auth)**: a recent Claude Desktop release moved the Cowork OAuth handoff to the `addApprovedOauthToken` RPC + spawn-param and now *strips* `CLAUDE_CODE_OAUTH_TOKEN` from the spawned CLI's environment before the spawn call - on macOS a native addon re-injects it via a MITM proxy. Native Linux has no such proxy and never re-injected the token, so the spawned `claude` CLI started with `apiKeySource=none` and every Cowork turn failed instantly with "Not logged in - Please run /login", leaving the workspace-setup screen stuck. `Spawn` now threads the spawn RPC's own `oauthToken` param into the child env as `CLAUDE_CODE_OAUTH_TOKEN`. 1p-only guard: injection is skipped when the session already carries a credential (`CLAUDE_CODE_OAUTH_TOKEN`/`ANTHROPIC_AUTH_TOKEN`) or is a 3p/gateway setup (`ANTHROPIC_API_KEY` or a Bedrock/Vertex/Foundry base URL), so enterprise auth is never clobbered. KVM mode is unchanged (it forwards the token to the guest via the bridge). No wire-protocol change - Desktop already sends `oauthToken`.
 
